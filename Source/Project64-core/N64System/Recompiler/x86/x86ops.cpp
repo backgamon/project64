@@ -210,109 +210,163 @@ void CX86Ops::Fsub(const asmjit::x86::Mem & Mem)
 
 void CX86Ops::JaeLabel(const char * LabelName, asmjit::Label & JumpLabel)
 {
-    AddLabelSymbol(JumpLabel, LabelName);
+    if (CDebugSettings::bRecordRecompilerAsm())
+    {
+        AddLabelSymbol(JumpLabel, LabelName);
+    }
     jae(JumpLabel);
 }
 
 void CX86Ops::JaLabel(const char * LabelName, asmjit::Label & JumpLabel)
 {
-    AddLabelSymbol(JumpLabel, LabelName);
+    if (CDebugSettings::bRecordRecompilerAsm())
+    {
+        AddLabelSymbol(JumpLabel, LabelName);
+    }
     ja(JumpLabel);
 }
 
 void CX86Ops::JbLabel(const char * LabelName, asmjit::Label & JumpLabel)
 {
-    AddLabelSymbol(JumpLabel, LabelName);
+    if (CDebugSettings::bRecordRecompilerAsm())
+    {
+        AddLabelSymbol(JumpLabel, LabelName);
+    }
     jb(JumpLabel);
 }
 
 void CX86Ops::JbeLabel(const char * LabelName, asmjit::Label & JumpLabel)
 {
-    AddLabelSymbol(JumpLabel, LabelName);
+    if (CDebugSettings::bRecordRecompilerAsm())
+    {
+        AddLabelSymbol(JumpLabel, LabelName);
+    }
     jbe(JumpLabel);
 }
 
 void CX86Ops::JecxzLabel(const char * LabelName, asmjit::Label & JumpLabel)
 {
-    AddLabelSymbol(JumpLabel, LabelName);
+    if (CDebugSettings::bRecordRecompilerAsm())
+    {
+        AddLabelSymbol(JumpLabel, LabelName);
+    }
     jecxz(JumpLabel);
 }
 
 void CX86Ops::JeLabel(const char * LabelName, asmjit::Label & JumpLabel)
 {
-    AddLabelSymbol(JumpLabel, LabelName);
+    if (CDebugSettings::bRecordRecompilerAsm())
+    {
+        AddLabelSymbol(JumpLabel, LabelName);
+    }
     je(JumpLabel);
 }
 
 void CX86Ops::JgeLabel(const char * LabelName, asmjit::Label & JumpLabel)
 {
-    AddLabelSymbol(JumpLabel, LabelName);
+    if (CDebugSettings::bRecordRecompilerAsm())
+    {
+        AddLabelSymbol(JumpLabel, LabelName);
+    }
     jge(JumpLabel);
 }
 
 void CX86Ops::JgLabel(const char * LabelName, asmjit::Label & JumpLabel)
 {
-    AddLabelSymbol(JumpLabel, LabelName);
+    if (CDebugSettings::bRecordRecompilerAsm())
+    {
+        AddLabelSymbol(JumpLabel, LabelName);
+    }
     jg(JumpLabel);
 }
 
 void CX86Ops::JleLabel(const char * LabelName, asmjit::Label & JumpLabel)
 {
-    AddLabelSymbol(JumpLabel, LabelName);
+    if (CDebugSettings::bRecordRecompilerAsm())
+    {
+        AddLabelSymbol(JumpLabel, LabelName);
+    }
     jle(JumpLabel);
 }
 
 void CX86Ops::JlLabel(const char * LabelName, asmjit::Label & JumpLabel)
 {
-    AddLabelSymbol(JumpLabel, LabelName);
+    if (CDebugSettings::bRecordRecompilerAsm())
+    {
+        AddLabelSymbol(JumpLabel, LabelName);
+    }
     jl(JumpLabel);
 }
 
 void CX86Ops::JmpLabel(const char * LabelName, asmjit::Label & JumpLabel)
 {
-    AddLabelSymbol(JumpLabel, LabelName);
+    if (CDebugSettings::bRecordRecompilerAsm())
+    {
+        AddLabelSymbol(JumpLabel, LabelName);
+    }
     jmp(JumpLabel);
 }
 
 void CX86Ops::JneLabel(const char * LabelName, asmjit::Label & JumpLabel)
 {
-    AddLabelSymbol(JumpLabel, LabelName);
+    if (CDebugSettings::bRecordRecompilerAsm())
+    {
+        AddLabelSymbol(JumpLabel, LabelName);
+    }
     jne(JumpLabel);
 }
 
 void CX86Ops::JnpLabel(const char * LabelName, asmjit::Label & JumpLabel)
 {
-    AddLabelSymbol(JumpLabel, LabelName);
+    if (CDebugSettings::bRecordRecompilerAsm())
+    {
+        AddLabelSymbol(JumpLabel, LabelName);
+    }
     jnp(JumpLabel);
 }
 
 void CX86Ops::JnsLabel(const char * LabelName, asmjit::Label & JumpLabel)
 {
-    AddLabelSymbol(JumpLabel, LabelName);
+    if (CDebugSettings::bRecordRecompilerAsm())
+    {
+        AddLabelSymbol(JumpLabel, LabelName);
+    }
     jns(JumpLabel);
 }
 
 void CX86Ops::JnzLabel(const char * LabelName, asmjit::Label & JumpLabel)
 {
-    AddLabelSymbol(JumpLabel, LabelName);
+    if (CDebugSettings::bRecordRecompilerAsm())
+    {
+        AddLabelSymbol(JumpLabel, LabelName);
+    }
     jnz(JumpLabel);
 }
 
 void CX86Ops::JsLabel(const char * LabelName, asmjit::Label & JumpLabel)
 {
-    AddLabelSymbol(JumpLabel, LabelName);
+    if (CDebugSettings::bRecordRecompilerAsm())
+    {
+        AddLabelSymbol(JumpLabel, LabelName);
+    }
     js(JumpLabel);
 }
 
 void CX86Ops::JoLabel(const char * LabelName, asmjit::Label & JumpLabel)
 {
-    AddLabelSymbol(JumpLabel, LabelName);
+    if (CDebugSettings::bRecordRecompilerAsm())
+    {
+        AddLabelSymbol(JumpLabel, LabelName);
+    }
     jo(JumpLabel);
 }
 
 void CX86Ops::JzLabel(const char * LabelName, asmjit::Label & JumpLabel)
 {
-    AddLabelSymbol(JumpLabel, LabelName);
+    if (CDebugSettings::bRecordRecompilerAsm())
+    {
+        AddLabelSymbol(JumpLabel, LabelName);
+    }
     jz(JumpLabel);
 }
 
