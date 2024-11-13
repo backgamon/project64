@@ -923,7 +923,7 @@ asmjit::Error CX86Ops::_log(const char * data, size_t size) noexcept
             char c = AsmjitLog[Pos + 1 + i];
             if (c >= '0' && c <= '9')
             {
-                Value = (Value << 4) | (c - '0');
+                Value = (Value * 10) + (c - '0');
             }
             else
             {
