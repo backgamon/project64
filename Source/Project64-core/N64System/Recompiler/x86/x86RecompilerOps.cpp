@@ -9771,33 +9771,64 @@ asmjit::x86::Gp CX86RecompilerOps::BaseOffsetAddress(bool UseBaseRegister)
 
 void CX86RecompilerOps::CompileLoadMemoryValue(asmjit::x86::Gp & AddressReg, const asmjit::x86::Gp & ValueReg, const asmjit::x86::Gp & ValueRegHi, uint8_t ValueSize, bool SignExtend)
 {
+    if (ValueSize == 32 && m_Instruction.WritesGPR() != 0)
+    {
+        m_RegWorkingSet.ProtectGPR(m_Opcode.base);
+        m_RegWorkingSet.Map_GPR_32bit(m_Opcode.rt, true, m_Opcode.rt != m_Opcode.base ? -1 : m_Opcode.base);
+    }
+    asmjit::Label Load64AddrDone;
+    if (ValueSize == 32 && m_RegWorkingSet.IsMapped(m_Opcode.base) && m_RegWorkingSet.Is32Bit(m_Opcode.base) && !m_RegWorkingSet.IsSigned(m_Opcode.base))
+    {
+        asmjit::Label Load32bitValue = m_Assembler.newLabel();
+        m_Assembler.test(m_RegWorkingSet.GetMipsRegMapLo(m_Opcode.base), 0x80000000);
+        m_Assembler.JzLabel(stdstr_f("Load32bitValue_%X", m_CompilePC).c_str(), Load32bitValue);
+
+        m_Assembler.MoveConstToVariable(&g_Reg->m_PROGRAM_COUNTER, "PROGRAM_COUNTER", m_CompilePC);
+        m_RegWorkingSet.BeforeCallDirect();
+        m_Assembler.PushImm32("m_TempValue32", (uint32_t)&m_TempValue32);
+        m_Assembler.push(0);
+        m_Assembler.push(m_RegWorkingSet.GetMipsRegMapLo(m_Opcode.base));
+        m_Assembler.CallThis((uint32_t)(&m_MMU), AddressOf(&CMipsMemoryVM::LW_Memory), "CMipsMemoryVM::LW_Memory", 16);
+        m_Assembler.test(asmjit::x86::al, asmjit::x86::al);
+        m_RegWorkingSet.AfterCallDirect();
+        CRegInfo ExitRegSet = m_RegWorkingSet;
+        ExitRegSet.SetBlockCycleCount(ExitRegSet.GetBlockCycleCount() + g_System->CountPerOp());
+        CompileExit((uint32_t)-1, (uint32_t)-1, ExitRegSet, ExitReason_Exception, false, &CX86Ops::JeLabel);
+
+        if (m_Instruction.WritesGPR() != 0)
+        {
+            m_Assembler.MoveVariableToX86reg(m_RegWorkingSet.GetMipsRegMapLo(m_Opcode.rt), &m_TempValue32, "TempValue32");
+        }
+        Load64AddrDone = m_Assembler.newLabel();
+        m_Assembler.JmpLabel("Load64AddrDone", Load64AddrDone);
+        m_Assembler.bind(Load32bitValue);
+    }
+
     bool UnprotectAddressReg = !AddressReg.isValid();
     if (UnprotectAddressReg)
     {
-        if (ValueSize == 8)
-        {
-            AddressReg = BaseOffsetAddress(false);
-            TestReadBreakpoint(AddressReg, (uint32_t)x86TestReadBreakPoint8, "x86TestReadBreakpoint8");
-        }
-        else if (ValueSize == 16)
-        {
-            AddressReg = BaseOffsetAddress(false);
-            TestReadBreakpoint(AddressReg, (uint32_t)x86TestReadBreakPoint16, "x86TestReadBreakpoint16");
-        }
-        else if (ValueSize == 32)
-        {
-            AddressReg = BaseOffsetAddress(true);
-            TestReadBreakpoint(AddressReg, (uint32_t)x86TestReadBreakPoint32, "x86TestReadBreakpoint32");
-        }
-        else if (ValueSize == 64)
-        {
-            AddressReg = BaseOffsetAddress(true);
-            TestReadBreakpoint(AddressReg, (uint32_t)x86TestReadBreakPoint64, "x86TestReadBreakpoint64");
-        }
-        else
-        {
-            g_Notify->BreakPoint(__FILE__, __LINE__);
-        }
+        AddressReg = BaseOffsetAddress(ValueSize >= 32);
+    }
+
+    if (ValueSize == 8)
+    {
+        TestReadBreakpoint(AddressReg, (uint32_t)x86TestReadBreakPoint8, "x86TestReadBreakpoint8");
+    }
+    else if (ValueSize == 16)
+    {
+        TestReadBreakpoint(AddressReg, (uint32_t)x86TestReadBreakPoint16, "x86TestReadBreakpoint16");
+    }
+    else if (ValueSize == 32)
+    {
+        TestReadBreakpoint(AddressReg, (uint32_t)x86TestReadBreakPoint32, "x86TestReadBreakpoint32");
+    }
+    else if (ValueSize == 64)
+    {
+        TestReadBreakpoint(AddressReg, (uint32_t)x86TestReadBreakPoint64, "x86TestReadBreakpoint64");
+    }
+    else
+    {
+        g_Notify->BreakPoint(__FILE__, __LINE__);
     }
 
     asmjit::x86::Gp TempReg = m_RegWorkingSet.Map_TempReg(x86Reg_Unknown, -1, false, false);
@@ -9947,7 +9978,6 @@ void CX86RecompilerOps::CompileLoadMemoryValue(asmjit::x86::Gp & AddressReg, con
         }
         else
         {
-            m_RegWorkingSet.Map_GPR_32bit(m_Opcode.rt, true, -1);
             MovReg = m_RegWorkingSet.GetMipsRegMapLo(m_Opcode.rt);
         }
 
@@ -9980,6 +10010,10 @@ void CX86RecompilerOps::CompileLoadMemoryValue(asmjit::x86::Gp & AddressReg, con
     if (UnprotectAddressReg)
     {
         m_RegWorkingSet.SetX86Protected(GetIndexFromX86Reg(AddressReg), false);
+    }
+    if (Load64AddrDone.isValid())
+    {
+        m_Assembler.bind(Load64AddrDone);
     }
 }
 
