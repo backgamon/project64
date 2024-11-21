@@ -9773,8 +9773,13 @@ void CX86RecompilerOps::CompileLoadMemoryValue(asmjit::x86::Gp & AddressReg, con
 {
     if (ValueSize == 32 && m_Instruction.WritesGPR() > 0)
     {
+        int32_t LoadReg = m_Opcode.rt == m_Opcode.base ? m_Opcode.base : -1;
+        if (m_Opcode.op == R4300i_LWL || m_Opcode.op == R4300i_LWR)
+        {
+            LoadReg = m_Opcode.rt;
+        }
         m_RegWorkingSet.ProtectGPR(m_Opcode.base);
-        m_RegWorkingSet.Map_GPR_32bit(m_Opcode.rt, true, m_Opcode.rt != m_Opcode.base ? -1 : m_Opcode.base);
+        m_RegWorkingSet.Map_GPR_32bit(m_Opcode.rt, true, LoadReg);
     }
     asmjit::Label Load64AddrDone;
     if (ValueSize == 32 && m_RegWorkingSet.IsMapped(m_Opcode.base) && m_RegWorkingSet.Is32Bit(m_Opcode.base) && !m_RegWorkingSet.IsSigned(m_Opcode.base))
