@@ -13,7 +13,7 @@ class R4300iOp :
     friend CX86RecompilerOps;
 
 public:
-    R4300iOp(CN64System & System);
+    R4300iOp(CN64System & System, bool Force32bit);
     ~R4300iOp(void);
 
     void ExecuteCPU();
@@ -30,7 +30,7 @@ private:
     R4300iOp(const R4300iOp &);
     R4300iOp & operator=(const R4300iOp &);
 
-    void BuildInterpreter(void);
+    void BuildInterpreter(bool Force32bit);
 
     typedef void (R4300iOp::*Func)();
 
@@ -74,6 +74,7 @@ private:
     void LH();
     void LWL();
     void LW();
+    void LW_32();
     void LBU();
     void LHU();
     void LWR();
@@ -82,6 +83,7 @@ private:
     void SH();
     void SWL();
     void SW();
+    void SW_32();
     void SDL();
     void SDR();
     void SWR();

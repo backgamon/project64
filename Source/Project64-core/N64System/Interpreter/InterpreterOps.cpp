@@ -23,7 +23,7 @@ const int32_t R4300iOp::SWR_SHIFT[4] = {24, 16, 8, 0};
 const int32_t R4300iOp::LWL_SHIFT[4] = {0, 8, 16, 24};
 const int32_t R4300iOp::LWR_SHIFT[4] = {24, 16, 8, 0};
 
-R4300iOp::R4300iOp(CN64System & System) :
+R4300iOp::R4300iOp(CN64System & System, bool Force32bit) :
     m_System(System),
     m_Reg(System.m_Reg),
     m_TLB(System.m_TLB),
@@ -43,7 +43,7 @@ R4300iOp::R4300iOp(CN64System & System) :
     m_LLBit(System.m_Reg.m_LLBit)
 {
     m_Opcode.Value = 0;
-    BuildInterpreter();
+    BuildInterpreter(Force32bit);
 }
 
 R4300iOp::~R4300iOp()
@@ -263,7 +263,7 @@ void R4300iOp::COP1_L()
     (this->*Jump_CoP1_L[m_Opcode.funct])();
 }
 
-void R4300iOp::BuildInterpreter()
+void R4300iOp::BuildInterpreter(bool Force32bit)
 {
     Jump_Opcode[0] = &R4300iOp::SPECIAL;
     Jump_Opcode[1] = &R4300iOp::REGIMM;
@@ -300,7 +300,7 @@ void R4300iOp::BuildInterpreter()
     Jump_Opcode[32] = &R4300iOp::LB;
     Jump_Opcode[33] = &R4300iOp::LH;
     Jump_Opcode[34] = &R4300iOp::LWL;
-    Jump_Opcode[35] = &R4300iOp::LW;
+    Jump_Opcode[35] = Force32bit ? &R4300iOp::LW_32 : &R4300iOp::LW;
     Jump_Opcode[36] = &R4300iOp::LBU;
     Jump_Opcode[37] = &R4300iOp::LHU;
     Jump_Opcode[38] = &R4300iOp::LWR;
@@ -308,7 +308,7 @@ void R4300iOp::BuildInterpreter()
     Jump_Opcode[40] = &R4300iOp::SB;
     Jump_Opcode[41] = &R4300iOp::SH;
     Jump_Opcode[42] = &R4300iOp::SWL;
-    Jump_Opcode[43] = &R4300iOp::SW;
+    Jump_Opcode[43] = Force32bit ? &R4300iOp::SW_32 : &R4300iOp::SW;
     Jump_Opcode[44] = &R4300iOp::SDL;
     Jump_Opcode[45] = &R4300iOp::SDR;
     Jump_Opcode[46] = &R4300iOp::SWR;
@@ -1182,6 +1182,17 @@ void R4300iOp::LW()
     }
 }
 
+void R4300iOp::LW_32()
+{
+    uint64_t Address = m_GPR[m_Opcode.base].W[0] + (int16_t)m_Opcode.offset;
+    uint32_t MemoryValue;
+
+    if (m_MMU.LW_Memory(Address, MemoryValue))
+    {
+        m_GPR[m_Opcode.rt].DW = (int32_t)MemoryValue;
+    }
+}
+
 void R4300iOp::LBU()
 {
     uint64_t Address = m_GPR[m_Opcode.base].DW + (int16_t)m_Opcode.offset;
@@ -1259,6 +1270,12 @@ void R4300iOp::SWL()
 void R4300iOp::SW()
 {
     uint64_t Address = m_GPR[m_Opcode.base].DW + (int16_t)m_Opcode.offset;
+    m_MMU.SW_Memory(Address, m_GPR[m_Opcode.rt].UW[0]);
+}
+
+void R4300iOp::SW_32()
+{
+    uint64_t Address = m_GPR[m_Opcode.base].W[0] + (int16_t)m_Opcode.offset;
     m_MMU.SW_Memory(Address, m_GPR[m_Opcode.rt].UW[0]);
 }
 

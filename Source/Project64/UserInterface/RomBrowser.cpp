@@ -1102,9 +1102,9 @@ void CRomBrowser::SelectRomDir(void)
         wchar_t Directory[_MAX_PATH];
         if (SHGetPathFromIDList(pidl, Directory))
         {
-            CPath RomDir(stdstr().FromUTF16(Directory), "");
-            g_Settings->SaveString(RomList_GameDir, RomDir.GetDriveDirectory());
-            Notify().AddRecentDir(RomDir.GetDriveDirectory().c_str());
+            CPath NewRomDir(stdstr().FromUTF16(Directory), "");
+            g_Settings->SaveString(RomList_GameDir, NewRomDir.GetDriveDirectory());
+            Notify().AddRecentDir(NewRomDir.GetDriveDirectory().c_str());
             RefreshRomList();
         }
     }

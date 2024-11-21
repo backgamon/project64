@@ -32,7 +32,7 @@ CN64System::CN64System(CPlugins * Plugins, uint32_t randomizer_seed, bool SavesR
     //m_Cheats(m_MMU_VM),
     m_Reg(*this, m_SystemEvents),
     m_TLB(m_MMU_VM, m_Reg, m_Recomp),
-    m_OpCodes(*this),
+    m_OpCodes(*this, !SyncSystem && g_Settings->LoadDword(Game_CpuType) != CPU_Interpreter && b32BitCore()),
     m_Recomp(nullptr),
     m_InReset(false),
     m_NextTimer(0),
