@@ -9771,7 +9771,7 @@ asmjit::x86::Gp CX86RecompilerOps::BaseOffsetAddress(bool UseBaseRegister)
 
 void CX86RecompilerOps::CompileLoadMemoryValue(asmjit::x86::Gp & AddressReg, const asmjit::x86::Gp & ValueReg, const asmjit::x86::Gp & ValueRegHi, uint8_t ValueSize, bool SignExtend)
 {
-    if (ValueSize == 32 && m_Instruction.WritesGPR() != 0)
+    if (ValueSize == 32 && m_Instruction.WritesGPR() > 0)
     {
         m_RegWorkingSet.ProtectGPR(m_Opcode.base);
         m_RegWorkingSet.Map_GPR_32bit(m_Opcode.rt, true, m_Opcode.rt != m_Opcode.base ? -1 : m_Opcode.base);
