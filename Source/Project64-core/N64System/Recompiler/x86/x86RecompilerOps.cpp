@@ -6012,7 +6012,7 @@ void CX86RecompilerOps::SPECIAL_XOR()
         {
             uint64_t Value;
 
-            if (m_RegWorkingSet.Is64Bit(KnownReg))
+            if (m_RegWorkingSet.Is64Bit(KnownReg) || KnownReg == 0)
             {
                 Value = m_RegWorkingSet.GetMipsReg(KnownReg);
                 m_RegWorkingSet.Map_GPR_64bit(m_Opcode.rd, UnknownReg);
