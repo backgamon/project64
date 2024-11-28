@@ -10155,7 +10155,7 @@ void CX86RecompilerOps::CompileStoreMemoryValue(asmjit::x86::Gp AddressReg, cons
             m_Assembler.MoveConstToVariable(&g_System->m_PipelineStage, "g_System->m_PipelineStage", PIPELINE_STAGE_NORMAL);
         }
         MemoryWriteDone = m_Assembler.newLabel();
-        m_Assembler.JmpLabel(stdstr_f("MemoryWrite_%X_Done:", m_CompilePC).c_str(), MemoryWriteDone);
+        m_Assembler.JmpLabel(stdstr_f("MemoryWrite_%X_Done", m_CompilePC).c_str(), MemoryWriteDone);
     }
     else if (ValueSize == 16)
     {
@@ -10182,7 +10182,7 @@ void CX86RecompilerOps::CompileStoreMemoryValue(asmjit::x86::Gp AddressReg, cons
             m_Assembler.MoveConstToVariable(&g_System->m_PipelineStage, "g_System->m_PipelineStage", PIPELINE_STAGE_NORMAL);
         }
         MemoryWriteDone = m_Assembler.newLabel();
-        m_Assembler.JmpLabel(stdstr_f("MemoryWrite_%X_Done:", m_CompilePC).c_str(), MemoryWriteDone);
+        m_Assembler.JmpLabel(stdstr_f("MemoryWrite_%X_Done", m_CompilePC).c_str(), MemoryWriteDone);
     }
     else if (ValueSize == 32)
     {
@@ -10212,7 +10212,7 @@ void CX86RecompilerOps::CompileStoreMemoryValue(asmjit::x86::Gp AddressReg, cons
             m_Assembler.MoveConstToVariable(&g_System->m_PipelineStage, "g_System->m_PipelineStage", PIPELINE_STAGE_NORMAL);
         }
         MemoryWriteDone = m_Assembler.newLabel();
-        m_Assembler.JmpLabel(stdstr_f("MemoryWrite_%X_Done:", m_CompilePC).c_str(), MemoryWriteDone);
+        m_Assembler.JmpLabel(stdstr_f("MemoryWrite_%X_Done", m_CompilePC).c_str(), MemoryWriteDone);
     }
     else if (ValueSize == 64)
     {
@@ -10241,7 +10241,7 @@ void CX86RecompilerOps::CompileStoreMemoryValue(asmjit::x86::Gp AddressReg, cons
             m_Assembler.MoveConstToVariable(&g_System->m_PipelineStage, "g_System->m_PipelineStage", PIPELINE_STAGE_NORMAL);
         }
         MemoryWriteDone = m_Assembler.newLabel();
-        m_Assembler.JmpLabel(stdstr_f("MemoryWrite_%X_Done:", m_CompilePC).c_str(), MemoryWriteDone);
+        m_Assembler.JmpLabel(stdstr_f("MemoryWrite_%X_Done", m_CompilePC).c_str(), MemoryWriteDone);
     }
     else
     {

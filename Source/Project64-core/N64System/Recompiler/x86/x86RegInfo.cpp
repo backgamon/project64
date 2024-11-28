@@ -1763,7 +1763,7 @@ void CX86RegInfo::WriteBackRegisters()
             {
                 m_Assembler.MoveX86regToVariable(&m_Reg.m_GPR[count].UW[1], CRegName::GPR_Hi[count], asmjit::x86::edi);
             }
-            else if (GetMipsRegLo(count) == 0xFFFFFFFF)
+            else if (GetMipsRegHi(count) == 0xFFFFFFFF)
             {
                 m_Assembler.MoveX86regToVariable(&m_Reg.m_GPR[count].UW[1], CRegName::GPR_Hi[count], asmjit::x86::esi);
             }
