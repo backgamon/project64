@@ -2386,7 +2386,7 @@ void CX86RecompilerOps::ADDI()
 
 void CX86RecompilerOps::ADDIU()
 {
-    if (m_Opcode.rt == 0 || (m_Opcode.immediate == 0 && m_Opcode.rs == m_Opcode.rt))
+    if (m_Opcode.rt == 0 || (m_Opcode.immediate == 0 && m_Opcode.rs == m_Opcode.rt && m_RegWorkingSet.Is32BitMapped(m_Opcode.rt)))
     {
         return;
     }
