@@ -5519,9 +5519,12 @@ void CX86RecompilerOps::SPECIAL_AND()
         {
             if (m_RegWorkingSet.Is64Bit(m_Opcode.rt) || m_RegWorkingSet.Is64Bit(m_Opcode.rs))
             {
-                m_RegWorkingSet.SetMipsReg(m_Opcode.rd,
-                                           (m_RegWorkingSet.Is64Bit(m_Opcode.rt) ? m_RegWorkingSet.GetMipsReg(m_Opcode.rt) : (int64_t)m_RegWorkingSet.GetMipsRegLo_S(m_Opcode.rt)) &
-                                               (m_RegWorkingSet.Is64Bit(m_Opcode.rs) ? m_RegWorkingSet.GetMipsReg(m_Opcode.rs) : (int64_t)m_RegWorkingSet.GetMipsRegLo_S(m_Opcode.rs)));
+                uint64_t Value = (m_RegWorkingSet.Is64Bit(m_Opcode.rt) ? m_RegWorkingSet.GetMipsReg(m_Opcode.rt) : (int64_t)m_RegWorkingSet.GetMipsRegLo_S(m_Opcode.rt)) & (m_RegWorkingSet.Is64Bit(m_Opcode.rs) ? m_RegWorkingSet.GetMipsReg(m_Opcode.rs) : (int64_t)m_RegWorkingSet.GetMipsRegLo_S(m_Opcode.rs));
+                if (m_RegWorkingSet.IsMapped(m_Opcode.rd))
+                {
+                    m_RegWorkingSet.UnMap_GPR(m_Opcode.rd, false);
+                }
+                m_RegWorkingSet.SetMipsReg(m_Opcode.rd, Value);
 
                 if (m_RegWorkingSet.GetMipsRegLo_S(m_Opcode.rd) < 0 && m_RegWorkingSet.GetMipsRegHi_S(m_Opcode.rd) == -1)
                 {
@@ -5538,7 +5541,12 @@ void CX86RecompilerOps::SPECIAL_AND()
             }
             else
             {
-                m_RegWorkingSet.SetMipsReg(m_Opcode.rd, m_RegWorkingSet.GetMipsRegLo(m_Opcode.rt) & m_RegWorkingSet.GetMipsReg(m_Opcode.rs));
+                uint32_t Value = m_RegWorkingSet.GetMipsRegLo(m_Opcode.rt) & m_RegWorkingSet.GetMipsReg(m_Opcode.rs);
+                if (m_RegWorkingSet.IsMapped(m_Opcode.rd))
+                {
+                    m_RegWorkingSet.UnMap_GPR(m_Opcode.rd, false);
+                }
+                m_RegWorkingSet.SetMipsReg(m_Opcode.rd, Value);
                 m_RegWorkingSet.SetMipsRegState(m_Opcode.rd, CRegInfo::STATE_CONST_32_SIGN);
             }
         }
