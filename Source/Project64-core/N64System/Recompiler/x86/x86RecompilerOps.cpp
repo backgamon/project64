@@ -3815,6 +3815,39 @@ void CX86RecompilerOps::SW(bool bCheckLLbit)
     }
     else
     {
+        asmjit::Label Store64AddrDone;
+        if (m_RegWorkingSet.IsMapped(m_Opcode.base) && m_RegWorkingSet.Is32Bit(m_Opcode.base) && !m_RegWorkingSet.IsSigned(m_Opcode.base))
+        {
+            asmjit::Label Store32bitValue = m_Assembler.newLabel();
+            m_Assembler.test(m_RegWorkingSet.GetMipsRegMapLo(m_Opcode.base), 0x80000000);
+            m_Assembler.JzLabel(stdstr_f("Store32bitValue_%X", m_CompilePC).c_str(), Store32bitValue);
+
+            m_Assembler.MoveConstToVariable(&g_Reg->m_PROGRAM_COUNTER, "PROGRAM_COUNTER", m_CompilePC);
+            m_RegWorkingSet.BeforeCallDirect();
+            if (m_RegWorkingSet.IsConst(m_Opcode.rt))
+            {
+                m_Assembler.push(m_RegWorkingSet.GetMipsRegLo(m_Opcode.rt));
+            }
+            else if (m_RegWorkingSet.IsMapped(m_Opcode.rt))
+            {
+                m_Assembler.push(m_RegWorkingSet.GetMipsRegMapLo(m_Opcode.rt));
+            }
+            else
+            {
+                g_Notify->BreakPoint(__FILE__, __LINE__);
+            }
+            m_Assembler.push(0);
+            m_Assembler.push(m_RegWorkingSet.GetMipsRegMapLo(m_Opcode.base));
+            m_Assembler.CallThis((uint32_t)(&m_MMU), AddressOf(&CMipsMemoryVM::SW_Memory), "CMipsMemoryVM::SW_Memory", 16);
+            m_Assembler.test(asmjit::x86::al, asmjit::x86::al);
+            m_RegWorkingSet.AfterCallDirect();
+            CRegInfo ExitRegSet = m_RegWorkingSet;
+            ExitRegSet.SetBlockCycleCount(ExitRegSet.GetBlockCycleCount() + g_System->CountPerOp());
+            CompileExit((uint32_t)-1, (uint32_t)-1, ExitRegSet, ExitReason_Exception, false, &CX86Ops::JeLabel);
+            Store64AddrDone = m_Assembler.newLabel();
+            m_Assembler.JmpLabel("Store64AddrDone", Store64AddrDone);
+            m_Assembler.bind(Store32bitValue);
+        }
         if (m_RegWorkingSet.IsConst(m_Opcode.base) && m_RegWorkingSet.Is32Bit(m_Opcode.base))
         {
             uint32_t Address = m_RegWorkingSet.GetMipsRegLo(m_Opcode.base) + (int16_t)m_Opcode.offset;
@@ -3877,6 +3910,10 @@ void CX86RecompilerOps::SW(bool bCheckLLbit)
             m_Assembler.bind(JumpLLBit);
             m_RegWorkingSet.Map_GPR_32bit(m_Opcode.rt, false, -1);
             m_Assembler.MoveVariableToX86reg(m_RegWorkingSet.GetMipsRegMapLo(m_Opcode.rt), &m_Reg.m_LLBit, "_LLBit");
+        }
+        if (Store64AddrDone.isValid())
+        {
+            m_Assembler.bind(Store64AddrDone);
         }
     }
 }
