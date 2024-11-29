@@ -25,6 +25,7 @@ void CALLBACK CSupportWindow::TimerProc(HWND, UINT, UINT_PTR idEvent, DWORD)
 
 void CSupportWindow::Show(HWND hParent, bool Delay)
 {
+    return;
     m_Delay = Delay;
     if (Delay)
     {
