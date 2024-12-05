@@ -5099,6 +5099,7 @@ void CX86RecompilerOps::SPECIAL_DIV()
             m_Assembler.MoveX86regToVariable(&m_Reg.m_HI.UW[0], "_RegHI->UW[0]", RegRs);
             if (!m_RegWorkingSet.IsMapped(m_Opcode.rs))
             {
+                RegRsHi = RegRs;
                 m_Assembler.sar(RegRsHi, 31);
             }
             m_Assembler.MoveX86regToVariable(&m_Reg.m_HI.UW[1], "_RegHI->UW[1]", RegRsHi);
