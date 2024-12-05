@@ -7288,6 +7288,10 @@ void CX86RecompilerOps::SPECIAL_DSLL32()
 
 void CX86RecompilerOps::SPECIAL_DSRL32()
 {
+    if (m_Opcode.rd == 0)
+    {
+        return;
+    }
     if (m_RegWorkingSet.IsConst(m_Opcode.rt))
     {
         if (m_Opcode.rt != m_Opcode.rd)
@@ -7339,6 +7343,10 @@ void CX86RecompilerOps::SPECIAL_DSRL32()
 
 void CX86RecompilerOps::SPECIAL_DSRA32()
 {
+    if (m_Opcode.rd == 0)
+    {
+        return;
+    }
     if (m_RegWorkingSet.IsConst(m_Opcode.rt))
     {
         if (m_Opcode.rt != m_Opcode.rd)
