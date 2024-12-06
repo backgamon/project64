@@ -135,7 +135,6 @@ void CRSPSystem::Reset(RSP_INFO & Info)
 
 void CRSPSystem::RomClosed(void)
 {
-
 }
 
 void CRSPSystem::RunRecompiler(void)
