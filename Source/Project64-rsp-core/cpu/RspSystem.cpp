@@ -120,6 +120,11 @@ void CRSPSystem::Reset(RSP_INFO & Info)
     {
         m_RdramSize = 0x00400000;
     }
+    if (m_RSPRegisterHandler != nullptr)
+    {
+        delete m_RSPRegisterHandler;
+        m_RSPRegisterHandler = nullptr;
+    }
     m_RSPRegisterHandler = new RSPRegisterHandlerPlugin(*this);
 
     if (m_SyncSystem != nullptr)
@@ -130,11 +135,6 @@ void CRSPSystem::Reset(RSP_INFO & Info)
 
 void CRSPSystem::RomClosed(void)
 {
-    if (m_RSPRegisterHandler != nullptr)
-    {
-        delete m_RSPRegisterHandler;
-        m_RSPRegisterHandler = nullptr;
-    }
 }
 
 void CRSPSystem::RunRecompiler(void)

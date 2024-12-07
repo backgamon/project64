@@ -1873,7 +1873,7 @@ bool CN64System::LoadState(const char * FileName)
         }
         zlib_filefunc64_def ffunc;
         fill_win32_filefunc64W(&ffunc);
-        unzFile file = unzOpen2_64(stdstr((std::string &)SaveFile).ToUTF16().c_str(), &ffunc);
+        unzFile file = unzOpen2_64(stdstr(std::string(SaveFile)).ToUTF16().c_str(), &ffunc);
         int port = -1;
         if (file != nullptr)
         {
@@ -1938,7 +1938,7 @@ bool CN64System::LoadState(const char * FileName)
                 {
                     uint64_t ReadProgramCounter;
                     unzReadCurrentFile(file, &ReadProgramCounter, sizeof(ReadProgramCounter));
-                    m_Reg.m_PROGRAM_COUNTER = (uint32_t)ReadProgramCounter;
+                    m_Reg.m_PROGRAM_COUNTER = (int32_t)ReadProgramCounter;
                 }
                 unzReadCurrentFile(file, m_Reg.m_GPR, sizeof(int64_t) * 32);
                 unzReadCurrentFile(file, m_Reg.m_FPR, sizeof(int64_t) * 32);

@@ -255,7 +255,6 @@
 #define IDC_DIR_FRAME1                  1101
 #define IDC_ROM_FASTSP                  1101
 #define IDC_INFO                        1101
-#define IDC_DISKSEEKTIMING_TEXT1        1101
 #define IDC_AUDIO_SIGNAL                1102
 #define IDC_DIR_TEXTURE_FRAME           1102
 #define IDC_ENTER_CODE                  1102
@@ -697,7 +696,7 @@
 #define IDC_SCRIPTS_GRP                 1578
 #define IDC_F4_LBL                      1579
 #define IDC_OUTPUT_GRP                  1579
-#define IDC_DISKSEEKTIMING_TEXT2        1579
+#define IDC_DISKSEEKTIMING_TEXT         1579
 #define IDC_F5_LBL                      1580
 #define IDC_EVAL_LBL                    1580
 #define IDC_DISKSEEKTIMING              1580
