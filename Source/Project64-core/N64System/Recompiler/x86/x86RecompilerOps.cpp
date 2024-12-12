@@ -10194,7 +10194,9 @@ void CX86RecompilerOps::CompileStoreMemoryValue(asmjit::x86::Gp AddressReg, cons
         }
         m_Assembler.test(asmjit::x86::al, asmjit::x86::al);
         m_RegWorkingSet.AfterCallDirect();
-        CompileExit(m_CompilePC, m_CompilePC, m_RegWorkingSet, ExitReason_NormalNoSysCheck, false, &CX86Ops::JeLabel);
+        m_RegWorkingSet.SetBlockCycleCount(m_RegWorkingSet.GetBlockCycleCount() + g_System->CountPerOp());
+        CompileExit(m_CompilePC, m_CompilePC, m_RegWorkingSet, ExitReason_Exception, false, &CX86Ops::JeLabel);
+        m_RegWorkingSet.SetBlockCycleCount(m_RegWorkingSet.GetBlockCycleCount() - g_System->CountPerOp());
         if (m_PipelineStage != PIPELINE_STAGE_NORMAL)
         {
             m_Assembler.MoveConstToVariable(&g_System->m_PipelineStage, "g_System->m_PipelineStage", PIPELINE_STAGE_NORMAL);
@@ -10221,7 +10223,9 @@ void CX86RecompilerOps::CompileStoreMemoryValue(asmjit::x86::Gp AddressReg, cons
         }
         m_Assembler.test(asmjit::x86::al, asmjit::x86::al);
         m_RegWorkingSet.AfterCallDirect();
+        m_RegWorkingSet.SetBlockCycleCount(m_RegWorkingSet.GetBlockCycleCount() + g_System->CountPerOp());
         CompileExit(m_CompilePC, m_CompilePC, m_RegWorkingSet, ExitReason_Exception, false, &CX86Ops::JeLabel);
+        m_RegWorkingSet.SetBlockCycleCount(m_RegWorkingSet.GetBlockCycleCount() - g_System->CountPerOp());
         if (m_PipelineStage != PIPELINE_STAGE_NORMAL)
         {
             m_Assembler.MoveConstToVariable(&g_System->m_PipelineStage, "g_System->m_PipelineStage", PIPELINE_STAGE_NORMAL);
@@ -10280,7 +10284,9 @@ void CX86RecompilerOps::CompileStoreMemoryValue(asmjit::x86::Gp AddressReg, cons
         }
         m_Assembler.test(asmjit::x86::al, asmjit::x86::al);
         m_RegWorkingSet.AfterCallDirect();
+        m_RegWorkingSet.SetBlockCycleCount(m_RegWorkingSet.GetBlockCycleCount() + g_System->CountPerOp());
         CompileExit(m_CompilePC, m_CompilePC, m_RegWorkingSet, ExitReason_Exception, false, &CX86Ops::JeLabel);
+        m_RegWorkingSet.SetBlockCycleCount(m_RegWorkingSet.GetBlockCycleCount() - g_System->CountPerOp());
         if (m_PipelineStage != PIPELINE_STAGE_NORMAL)
         {
             m_Assembler.MoveConstToVariable(&g_System->m_PipelineStage, "g_System->m_PipelineStage", PIPELINE_STAGE_NORMAL);
