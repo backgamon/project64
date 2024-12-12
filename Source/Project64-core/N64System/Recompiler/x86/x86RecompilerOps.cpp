@@ -10268,13 +10268,13 @@ void CX86RecompilerOps::CompileStoreMemoryValue(asmjit::x86::Gp AddressReg, cons
         m_RegWorkingSet.BeforeCallDirect();
         if (!ValueReg.isValid())
         {
-            m_Assembler.push((uint32_t)(Value & 0xFFFFFFFF));
             m_Assembler.push((uint32_t)((Value >> 32) & 0xFFFFFFFF));
+            m_Assembler.push((uint32_t)(Value & 0xFFFFFFFF));
         }
         else
         {
-            m_Assembler.push(ValueReg);
             m_Assembler.push(ValueRegHi);
+            m_Assembler.push(ValueReg);
         }
         m_Assembler.push(AddressReg);
         m_Assembler.CallThis((uint32_t)&m_MMU, AddressOf(&CMipsMemoryVM::SD_VAddr32), "CMipsMemoryVM::SD_VAddr32", 12);
