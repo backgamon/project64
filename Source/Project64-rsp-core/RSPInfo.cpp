@@ -12,6 +12,7 @@
 
 #if defined(_MSC_VER)
 #include <Windows.h>
+#include <intrin.h>
 #endif
 
 RSP_INFO RSPInfo;
