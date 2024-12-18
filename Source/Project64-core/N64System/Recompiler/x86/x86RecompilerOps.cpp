@@ -7729,7 +7729,6 @@ void CX86RecompilerOps::COP1_CT()
 
     if (m_Opcode.fs != 31)
     {
-        UnknownOpcode();
         return;
     }
 
