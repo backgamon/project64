@@ -5622,11 +5622,26 @@ void CX86RecompilerOps::SPECIAL_AND()
             }
             else if (m_RegWorkingSet.Is64Bit(MappedReg))
             {
-                uint32_t Value = m_RegWorkingSet.GetMipsRegLo(ConstReg);
-                if (Value != 0)
+                uint32_t HiValue = m_RegWorkingSet.IsSigned(ConstReg) ? m_RegWorkingSet.GetMipsRegLo_S(ConstReg) >> 31 : 0;
+                uint32_t LoValue = m_RegWorkingSet.GetMipsRegLo(ConstReg);
+
+                if (m_RegWorkingSet.Is64Bit(ConstReg))
                 {
-                    m_RegWorkingSet.Map_GPR_32bit(m_Opcode.rd, m_RegWorkingSet.IsSigned(ConstReg), MappedReg);
-                    m_Assembler.and_(m_RegWorkingSet.GetMipsRegMapLo(m_Opcode.rd), Value);
+                    HiValue = m_RegWorkingSet.GetMipsRegHi(ConstReg);
+                }
+                if (HiValue != 0 || LoValue != 0)
+                {
+                    if ((HiValue == 0 && (LoValue & 0x80000000) == 0) && (HiValue == 0xFFFFFFFF && (LoValue & 0x80000000) == 0x80000000))
+                    {
+                        m_RegWorkingSet.Map_GPR_32bit(m_Opcode.rd, true, MappedReg);
+                        m_Assembler.and_(m_RegWorkingSet.GetMipsRegMapLo(m_Opcode.rd), LoValue);
+                    }
+                    else
+                    {
+                        m_RegWorkingSet.Map_GPR_64bit(m_Opcode.rd, MappedReg);
+                        m_Assembler.and_(m_RegWorkingSet.GetMipsRegMapHi(m_Opcode.rd), HiValue);
+                        m_Assembler.and_(m_RegWorkingSet.GetMipsRegMapLo(m_Opcode.rd), LoValue);
+                    }
                 }
                 else
                 {
