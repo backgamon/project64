@@ -10445,7 +10445,7 @@ void CX86RecompilerOps::COP1_S_Opcode(void (CX86Ops::*Instruction)(void))
     }
     asmjit::x86::Gp TempReg = m_RegWorkingSet.FPRValuePointer(m_Opcode.fs, CRegInfo::FPU_FloatLow);
     CompileCheckFPUInput(TempReg, FpuOpSize_32bit);
-    m_RegWorkingSet.PrepareFPTopToBe(m_Opcode.fd, m_Opcode.fs, CRegInfo::FPU_Float);
+    m_RegWorkingSet.PrepareFPTopToBe(m_Opcode.fd, m_Opcode.fs, CRegInfo::FPU_FloatLow);
     (m_Assembler.*Instruction)();
     m_RegWorkingSet.SetX86Protected(GetIndexFromX86Reg(TempReg), false);
     CompileCheckFPUResult32(m_Opcode.fd);
@@ -10465,9 +10465,9 @@ void CX86RecompilerOps::COP1_S_Opcode(void (CX86Ops::*Instruction)(const asmjit:
     asmjit::x86::Gp TempReg = m_RegWorkingSet.FPRValuePointer(m_Opcode.fs, CRegInfo::FPU_Float);
     CompileCheckFPUInput(TempReg, FpuOpSize_32bit);
     m_RegWorkingSet.SetX86Protected(GetIndexFromX86Reg(TempReg), false);
-    TempReg = m_RegWorkingSet.FPRValuePointer(m_Opcode.ft, CRegInfo::FPU_Float);
+    TempReg = m_RegWorkingSet.FPRValuePointer(m_Opcode.ft, CRegInfo::FPU_Dword);
     CompileCheckFPUInput(TempReg, FpuOpSize_32bit);
-    m_RegWorkingSet.PrepareFPTopToBe(m_Opcode.fd, m_Opcode.fs, CRegInfo::FPU_Float);
+    m_RegWorkingSet.PrepareFPTopToBe(m_Opcode.fd, m_Opcode.fs, CRegInfo::FPU_FloatLow);
     (m_Assembler.*Instruction)(asmjit::x86::dword_ptr(TempReg));
     m_RegWorkingSet.SetX86Protected(GetIndexFromX86Reg(TempReg), false);
     CompileCheckFPUResult32(m_Opcode.fd);
