@@ -5622,11 +5622,26 @@ void CX86RecompilerOps::SPECIAL_AND()
             }
             else if (m_RegWorkingSet.Is64Bit(MappedReg))
             {
-                uint32_t Value = m_RegWorkingSet.GetMipsRegLo(ConstReg);
-                if (Value != 0)
+                uint32_t HiValue = m_RegWorkingSet.IsSigned(ConstReg) ? m_RegWorkingSet.GetMipsRegLo_S(ConstReg) >> 31 : 0;
+                uint32_t LoValue = m_RegWorkingSet.GetMipsRegLo(ConstReg);
+
+                if (m_RegWorkingSet.Is64Bit(ConstReg))
                 {
-                    m_RegWorkingSet.Map_GPR_32bit(m_Opcode.rd, m_RegWorkingSet.IsSigned(ConstReg), MappedReg);
-                    m_Assembler.and_(m_RegWorkingSet.GetMipsRegMapLo(m_Opcode.rd), Value);
+                    HiValue = m_RegWorkingSet.GetMipsRegHi(ConstReg);
+                }
+                if (HiValue != 0 || LoValue != 0)
+                {
+                    if ((HiValue == 0 && (LoValue & 0x80000000) == 0) && (HiValue == 0xFFFFFFFF && (LoValue & 0x80000000) == 0x80000000))
+                    {
+                        m_RegWorkingSet.Map_GPR_32bit(m_Opcode.rd, true, MappedReg);
+                        m_Assembler.and_(m_RegWorkingSet.GetMipsRegMapLo(m_Opcode.rd), LoValue);
+                    }
+                    else
+                    {
+                        m_RegWorkingSet.Map_GPR_64bit(m_Opcode.rd, MappedReg);
+                        m_Assembler.and_(m_RegWorkingSet.GetMipsRegMapHi(m_Opcode.rd), HiValue);
+                        m_Assembler.and_(m_RegWorkingSet.GetMipsRegMapLo(m_Opcode.rd), LoValue);
+                    }
                 }
                 else
                 {
@@ -7714,7 +7729,6 @@ void CX86RecompilerOps::COP1_CT()
 
     if (m_Opcode.fs != 31)
     {
-        UnknownOpcode();
         return;
     }
 
@@ -10431,7 +10445,7 @@ void CX86RecompilerOps::COP1_S_Opcode(void (CX86Ops::*Instruction)(void))
     }
     asmjit::x86::Gp TempReg = m_RegWorkingSet.FPRValuePointer(m_Opcode.fs, CRegInfo::FPU_FloatLow);
     CompileCheckFPUInput(TempReg, FpuOpSize_32bit);
-    m_RegWorkingSet.PrepareFPTopToBe(m_Opcode.fd, m_Opcode.fs, CRegInfo::FPU_Float);
+    m_RegWorkingSet.PrepareFPTopToBe(m_Opcode.fd, m_Opcode.fs, CRegInfo::FPU_FloatLow);
     (m_Assembler.*Instruction)();
     m_RegWorkingSet.SetX86Protected(GetIndexFromX86Reg(TempReg), false);
     CompileCheckFPUResult32(m_Opcode.fd);
@@ -10451,9 +10465,9 @@ void CX86RecompilerOps::COP1_S_Opcode(void (CX86Ops::*Instruction)(const asmjit:
     asmjit::x86::Gp TempReg = m_RegWorkingSet.FPRValuePointer(m_Opcode.fs, CRegInfo::FPU_Float);
     CompileCheckFPUInput(TempReg, FpuOpSize_32bit);
     m_RegWorkingSet.SetX86Protected(GetIndexFromX86Reg(TempReg), false);
-    TempReg = m_RegWorkingSet.FPRValuePointer(m_Opcode.ft, CRegInfo::FPU_Float);
+    TempReg = m_RegWorkingSet.FPRValuePointer(m_Opcode.ft, CRegInfo::FPU_Dword);
     CompileCheckFPUInput(TempReg, FpuOpSize_32bit);
-    m_RegWorkingSet.PrepareFPTopToBe(m_Opcode.fd, m_Opcode.fs, CRegInfo::FPU_Float);
+    m_RegWorkingSet.PrepareFPTopToBe(m_Opcode.fd, m_Opcode.fs, CRegInfo::FPU_FloatLow);
     (m_Assembler.*Instruction)(asmjit::x86::dword_ptr(TempReg));
     m_RegWorkingSet.SetX86Protected(GetIndexFromX86Reg(TempReg), false);
     CompileCheckFPUResult32(m_Opcode.fd);
@@ -11576,13 +11590,14 @@ void CX86RecompilerOps::COP1_S_CVT(CRegBase::FPU_ROUND RoundMethod, CRegInfo::FP
         m_Assembler.mov(asmjit::x86::eax, asmjit::x86::dword_ptr(fsRegPointer, 4));
         m_Assembler.adc(asmjit::x86::eax, 0x800000);
         m_Assembler.cmp(asmjit::x86::eax, 0xFFFFFF);
-        asmjit::Label UnimplementedOperationLabel = m_Assembler.newLabel();
         asmjit::Label ValidValueLabel = m_Assembler.newLabel();
-        m_Assembler.JaLabel("ValidValue", UnimplementedOperationLabel);
-        m_Assembler.JbLabel("UnimplementedOperationLabel", ValidValueLabel);
+        asmjit::Label ValidValueLabel2 = m_Assembler.newLabel();
+        asmjit::Label UnimplementedOperationLabel = m_Assembler.newLabel();
+        m_Assembler.JaLabel("ValidValue", ValidValueLabel);
+        m_Assembler.JbLabel("UnimplementedOperationLabel", UnimplementedOperationLabel);
         m_Assembler.cmp(asmjit::x86::eax, 0xFFFFFFFF);
-        m_Assembler.JbeLabel("ValidValue", ValidValueLabel);
-        m_Assembler.bind(UnimplementedOperationLabel);
+        m_Assembler.JbeLabel("ValidValue", ValidValueLabel2);
+        m_Assembler.bind(ValidValueLabel);
         CRegInfo ExitRegSet = m_RegWorkingSet;
         if (ExitRegSet.IsFPStatusRegMapped())
         {
@@ -11594,7 +11609,8 @@ void CX86RecompilerOps::COP1_S_CVT(CRegBase::FPU_ROUND RoundMethod, CRegInfo::FP
         }
         ExitRegSet.SetBlockCycleCount(ExitRegSet.GetBlockCycleCount() + g_System->CountPerOp());
         CompileExit(m_CompilePC, m_CompilePC, ExitRegSet, ExitReason_ExceptionFloatingPoint, false, &CX86Ops::JmpLabel);
-        m_Assembler.bind(ValidValueLabel);
+        m_Assembler.bind(UnimplementedOperationLabel);
+        m_Assembler.bind(ValidValueLabel2);
         m_Assembler.fpuLoadIntegerQwordFromX86Reg(m_RegWorkingSet.StackTopPos(), fsRegPointer);
     }
     else
