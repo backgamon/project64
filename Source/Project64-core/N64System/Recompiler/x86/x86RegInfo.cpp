@@ -1259,7 +1259,7 @@ void CX86RegInfo::PrepareFPTopToBe(int32_t Reg, int32_t RegToLoad, FPU_STATE For
         case FPU_Float:
             m_Assembler.MoveVariableToX86reg(TempReg, &g_Reg->m_FPR_S[RegToLoad], stdstr_f("m_FPR_S[%d]", RegToLoad).c_str());
             m_Assembler.fpuLoadDwordFromX86Reg(StackTopPos(), TempReg);
-            break;        
+            break;
         case FPU_FloatLow:
             m_Assembler.MoveVariableToX86reg(TempReg, &g_Reg->m_FPR_S_L[RegToLoad], stdstr_f("m_FPR_S_L[%d]", RegToLoad).c_str());
             m_Assembler.fpuLoadDwordFromX86Reg(StackTopPos(), TempReg);

@@ -11590,13 +11590,14 @@ void CX86RecompilerOps::COP1_S_CVT(CRegBase::FPU_ROUND RoundMethod, CRegInfo::FP
         m_Assembler.mov(asmjit::x86::eax, asmjit::x86::dword_ptr(fsRegPointer, 4));
         m_Assembler.adc(asmjit::x86::eax, 0x800000);
         m_Assembler.cmp(asmjit::x86::eax, 0xFFFFFF);
-        asmjit::Label UnimplementedOperationLabel = m_Assembler.newLabel();
         asmjit::Label ValidValueLabel = m_Assembler.newLabel();
-        m_Assembler.JaLabel("ValidValue", UnimplementedOperationLabel);
-        m_Assembler.JbLabel("UnimplementedOperationLabel", ValidValueLabel);
+        asmjit::Label ValidValueLabel2 = m_Assembler.newLabel();
+        asmjit::Label UnimplementedOperationLabel = m_Assembler.newLabel();
+        m_Assembler.JaLabel("ValidValue", ValidValueLabel);
+        m_Assembler.JbLabel("UnimplementedOperationLabel", UnimplementedOperationLabel);
         m_Assembler.cmp(asmjit::x86::eax, 0xFFFFFFFF);
-        m_Assembler.JbeLabel("ValidValue", ValidValueLabel);
-        m_Assembler.bind(UnimplementedOperationLabel);
+        m_Assembler.JbeLabel("ValidValue", ValidValueLabel2);
+        m_Assembler.bind(ValidValueLabel);
         CRegInfo ExitRegSet = m_RegWorkingSet;
         if (ExitRegSet.IsFPStatusRegMapped())
         {
@@ -11608,7 +11609,8 @@ void CX86RecompilerOps::COP1_S_CVT(CRegBase::FPU_ROUND RoundMethod, CRegInfo::FP
         }
         ExitRegSet.SetBlockCycleCount(ExitRegSet.GetBlockCycleCount() + g_System->CountPerOp());
         CompileExit(m_CompilePC, m_CompilePC, ExitRegSet, ExitReason_ExceptionFloatingPoint, false, &CX86Ops::JmpLabel);
-        m_Assembler.bind(ValidValueLabel);
+        m_Assembler.bind(UnimplementedOperationLabel);
+        m_Assembler.bind(ValidValueLabel2);
         m_Assembler.fpuLoadIntegerQwordFromX86Reg(m_RegWorkingSet.StackTopPos(), fsRegPointer);
     }
     else
