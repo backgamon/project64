@@ -8140,12 +8140,12 @@ void CX86RecompilerOps::COP1_D_CMP()
 // COP1: W functions
 void CX86RecompilerOps::COP1_W_CVT_S()
 {
-    COP1_S_CVT(CRegInfo::RoundDefault, CRegInfo::FPU_Dword, CRegInfo::FPU_Float);
+    COP1_S_CVT(CRegInfo::RoundDefault, CRegInfo::FPU_DwordLow, CRegInfo::FPU_Float);
 }
 
 void CX86RecompilerOps::COP1_W_CVT_D()
 {
-    COP1_S_CVT(CRegInfo::RoundDefault, CRegInfo::FPU_Dword, CRegInfo::FPU_Double);
+    COP1_S_CVT(CRegInfo::RoundDefault, CRegInfo::FPU_DwordLow, CRegInfo::FPU_Double);
 }
 
 // COP1: L functions
@@ -11581,7 +11581,7 @@ void CX86RecompilerOps::COP1_S_CVT(CRegBase::FPU_ROUND RoundMethod, CRegInfo::FP
         CompileCheckFPUInput(fsRegPointer, FpuOpSize_64bit, (NewFormat == CRegInfo::FPU_Dword || NewFormat == CRegInfo::FPU_Qword));
         m_Assembler.fpuLoadQwordFromX86Reg(m_RegWorkingSet.StackTopPos(), fsRegPointer);
     }
-    else if (OldFormat == CRegInfo::FPU_Dword)
+    else if (OldFormat == CRegInfo::FPU_Dword || OldFormat == CRegInfo::FPU_DwordLow)
     {
         m_Assembler.fpuLoadIntegerDwordFromX86Reg(m_RegWorkingSet.StackTopPos(), fsRegPointer);
     }
