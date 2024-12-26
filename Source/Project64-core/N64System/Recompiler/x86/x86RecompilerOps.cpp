@@ -8140,12 +8140,12 @@ void CX86RecompilerOps::COP1_D_CMP()
 // COP1: W functions
 void CX86RecompilerOps::COP1_W_CVT_S()
 {
-    COP1_S_CVT(CRegInfo::RoundDefault, CRegInfo::FPU_Dword, CRegInfo::FPU_Float);
+    COP1_S_CVT(CRegInfo::RoundDefault, CRegInfo::FPU_DwordLow, CRegInfo::FPU_Float);
 }
 
 void CX86RecompilerOps::COP1_W_CVT_D()
 {
-    COP1_S_CVT(CRegInfo::RoundDefault, CRegInfo::FPU_Dword, CRegInfo::FPU_Double);
+    COP1_S_CVT(CRegInfo::RoundDefault, CRegInfo::FPU_DwordLow, CRegInfo::FPU_Double);
 }
 
 // COP1: L functions
@@ -10403,6 +10403,7 @@ void CX86RecompilerOps::COP1_D_Opcode(void (CX86Ops::*Instruction)(void))
     CompileCheckFPUInput(TempReg, FpuOpSize_64bit);
     m_RegWorkingSet.SetX86Protected(GetIndexFromX86Reg(TempReg), false);
     m_RegWorkingSet.PrepareFPTopToBe(m_Opcode.fd, m_Opcode.fs, CRegInfo::FPU_Double);
+    m_RegWorkingSet.FpuState(m_RegWorkingSet.StackTopPos()) = CRegInfo::FPU_UnsignedDoubleWord;
     (m_Assembler.*Instruction)();
     m_Assembler.mov(TempReg, (uint64_t)&m_TempValue64);
     m_Assembler.fpuStoreQwordFromX86Reg(m_RegWorkingSet.StackTopPos(), TempReg, false);
@@ -10423,9 +10424,10 @@ void CX86RecompilerOps::COP1_D_Opcode(void (CX86Ops::*Instruction)(const asmjit:
     asmjit::x86::Gp TempReg = m_RegWorkingSet.FPRValuePointer(m_Opcode.fs, CRegInfo::FPU_Double);
     CompileCheckFPUInput(TempReg, FpuOpSize_64bit);
     m_RegWorkingSet.SetX86Protected(GetIndexFromX86Reg(TempReg), false);
-    TempReg = m_RegWorkingSet.FPRValuePointer(m_Opcode.ft, CRegInfo::FPU_Double);
+    TempReg = m_RegWorkingSet.FPRValuePointer(m_Opcode.ft, CRegInfo::FPU_UnsignedDoubleWord);
     CompileCheckFPUInput(TempReg, FpuOpSize_64bit);
     m_RegWorkingSet.PrepareFPTopToBe(m_Opcode.fd, m_Opcode.fs, CRegInfo::FPU_Double);
+    m_RegWorkingSet.FpuState(m_RegWorkingSet.StackTopPos()) = CRegInfo::FPU_UnsignedDoubleWord;
     (m_Assembler.*Instruction)(asmjit::x86::qword_ptr(TempReg));
     m_RegWorkingSet.SetX86Protected(GetIndexFromX86Reg(TempReg), false);
     m_Assembler.mov(TempReg, (uint64_t)&m_TempValue64);
@@ -11581,7 +11583,7 @@ void CX86RecompilerOps::COP1_S_CVT(CRegBase::FPU_ROUND RoundMethod, CRegInfo::FP
         CompileCheckFPUInput(fsRegPointer, FpuOpSize_64bit, (NewFormat == CRegInfo::FPU_Dword || NewFormat == CRegInfo::FPU_Qword));
         m_Assembler.fpuLoadQwordFromX86Reg(m_RegWorkingSet.StackTopPos(), fsRegPointer);
     }
-    else if (OldFormat == CRegInfo::FPU_Dword)
+    else if (OldFormat == CRegInfo::FPU_Dword || OldFormat == CRegInfo::FPU_DwordLow)
     {
         m_Assembler.fpuLoadIntegerDwordFromX86Reg(m_RegWorkingSet.StackTopPos(), fsRegPointer);
     }

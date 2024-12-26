@@ -350,6 +350,7 @@ asmjit::x86::Gp CX86RegInfo::FPRValuePointer(int32_t Reg, FPU_STATE Format)
     case FPU_UnsignedDoubleWord:
         m_Assembler.MoveVariableToX86reg(TempReg, &g_Reg->m_FPR_UDW[Reg], stdstr_f("m_FPR_UDW[%d]", Reg).c_str());
         break;
+    case FPU_DwordLow:
     case FPU_FloatLow:
         m_Assembler.MoveVariableToX86reg(TempReg, &g_Reg->m_FPR_S_L[Reg], stdstr_f("m_FPR_S_L[%d]", Reg).c_str());
         break;
@@ -1268,6 +1269,10 @@ void CX86RegInfo::PrepareFPTopToBe(int32_t Reg, int32_t RegToLoad, FPU_STATE For
             m_Assembler.MoveVariableToX86reg(TempReg, &g_Reg->m_FPR_D[RegToLoad], stdstr_f("m_FPR_D[%d]", RegToLoad).c_str());
             m_Assembler.fpuLoadQwordFromX86Reg(StackTopPos(), TempReg);
             break;
+        case FPU_UnsignedDoubleWord:
+            m_Assembler.MoveVariableToX86reg(TempReg, &g_Reg->m_FPR_UDW[RegToLoad], stdstr_f("m_FPR_UDW[%d]", RegToLoad).c_str());
+            m_Assembler.fpuLoadQwordFromX86Reg(StackTopPos(), TempReg);
+            break;
         default:
             if (HaveDebugger())
             {
@@ -1398,6 +1403,10 @@ void CX86RegInfo::UnMap_FPR(int32_t Reg, bool WriteBackValue)
                 break;
             case FPU_Double:
                 m_Assembler.MoveVariableToX86reg(TempReg, &m_Reg.m_FPR_D[m_x86fpu_MappedTo[StackTopPos()]], stdstr_f("_FPR_D[%d]", m_x86fpu_MappedTo[StackTopPos()]).c_str());
+                m_Assembler.fpuStoreQwordFromX86Reg(StackTopPos(), TempReg, true);
+                break;
+            case FPU_UnsignedDoubleWord:
+                m_Assembler.MoveVariableToX86reg(TempReg, &m_Reg.m_FPR_UDW[m_x86fpu_MappedTo[StackTopPos()]], stdstr_f("m_FPR_UDW[%d]", m_x86fpu_MappedTo[StackTopPos()]).c_str());
                 m_Assembler.fpuStoreQwordFromX86Reg(StackTopPos(), TempReg, true);
                 break;
             default:
