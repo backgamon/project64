@@ -10403,6 +10403,7 @@ void CX86RecompilerOps::COP1_D_Opcode(void (CX86Ops::*Instruction)(void))
     CompileCheckFPUInput(TempReg, FpuOpSize_64bit);
     m_RegWorkingSet.SetX86Protected(GetIndexFromX86Reg(TempReg), false);
     m_RegWorkingSet.PrepareFPTopToBe(m_Opcode.fd, m_Opcode.fs, CRegInfo::FPU_Double);
+    m_RegWorkingSet.FpuState(m_RegWorkingSet.StackTopPos()) = CRegInfo::FPU_UnsignedDoubleWord;
     (m_Assembler.*Instruction)();
     m_Assembler.mov(TempReg, (uint64_t)&m_TempValue64);
     m_Assembler.fpuStoreQwordFromX86Reg(m_RegWorkingSet.StackTopPos(), TempReg, false);
