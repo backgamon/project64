@@ -10423,9 +10423,10 @@ void CX86RecompilerOps::COP1_D_Opcode(void (CX86Ops::*Instruction)(const asmjit:
     asmjit::x86::Gp TempReg = m_RegWorkingSet.FPRValuePointer(m_Opcode.fs, CRegInfo::FPU_Double);
     CompileCheckFPUInput(TempReg, FpuOpSize_64bit);
     m_RegWorkingSet.SetX86Protected(GetIndexFromX86Reg(TempReg), false);
-    TempReg = m_RegWorkingSet.FPRValuePointer(m_Opcode.ft, CRegInfo::FPU_Double);
+    TempReg = m_RegWorkingSet.FPRValuePointer(m_Opcode.ft, CRegInfo::FPU_UnsignedDoubleWord);
     CompileCheckFPUInput(TempReg, FpuOpSize_64bit);
     m_RegWorkingSet.PrepareFPTopToBe(m_Opcode.fd, m_Opcode.fs, CRegInfo::FPU_Double);
+    m_RegWorkingSet.FpuState(m_RegWorkingSet.StackTopPos()) = CRegInfo::FPU_UnsignedDoubleWord;
     (m_Assembler.*Instruction)(asmjit::x86::qword_ptr(TempReg));
     m_RegWorkingSet.SetX86Protected(GetIndexFromX86Reg(TempReg), false);
     m_Assembler.mov(TempReg, (uint64_t)&m_TempValue64);
