@@ -9490,7 +9490,7 @@ void CX86RecompilerOps::CompileSystemCheck(uint32_t TargetPC, const CRegInfo & R
 {
     m_Assembler.CompConstByteToVariable((void *)&m_SystemEvents.DoSomething(), "m_SystemEvents.DoSomething()", 0);
     asmjit::Label Jump = m_Assembler.newLabel();
-    m_Assembler.JeLabel8("Continue_From_Interrupt_Test", Jump);
+    m_Assembler.JeLabel("Continue_From_Interrupt_Test", Jump);
     if (TargetPC != (uint32_t)-1)
     {
         m_Assembler.MoveConstToVariable(&g_Reg->m_PROGRAM_COUNTER, "PROGRAM_COUNTER", TargetPC);
