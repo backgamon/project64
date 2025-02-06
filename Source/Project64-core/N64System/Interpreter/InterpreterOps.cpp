@@ -45,7 +45,10 @@ R4300iOp::R4300iOp(CN64System & System, bool Force32bit) :
     m_FPR_S_L(System.m_Reg.m_FPR_S_L),
     m_FPR_D(System.m_Reg.m_FPR_D),
     m_FPCR(System.m_Reg.m_FPCR),
-    m_LLBit(System.m_Reg.m_LLBit)
+    m_LLBit(System.m_Reg.m_LLBit),
+    m_InstructionRegion(0),
+    m_InstructionMemory(nullptr),
+    m_InstructionPtr(nullptr)
 {
     m_Opcode.Value = 0;
     BuildInterpreter(Force32bit);
@@ -91,29 +94,10 @@ void R4300iOp::ExecuteOps(uint32_t Cycles)
     int32_t & NextTimer = *g_NextTimer;
     bool CheckTimer = false;
 
+    UpdateInstructionMemory();
     while (!Done && Cycles > 0)
     {
-        if ((uint64_t)((int32_t)m_PROGRAM_COUNTER) != m_PROGRAM_COUNTER)
-        {
-            uint32_t PAddr;
-            bool MemoryUnused;
-            if (!m_TLB.VAddrToPAddr(m_PROGRAM_COUNTER, PAddr, MemoryUnused))
-            {
-                m_Reg.TriggerAddressException(m_PROGRAM_COUNTER, MemoryUnused ? EXC_RADE : EXC_RMISS);
-                m_PROGRAM_COUNTER = JumpToLocation;
-                PipelineStage = PIPELINE_STAGE_NORMAL;
-                continue;
-            }
-            m_MMU.LW_PhysicalAddress(PAddr, m_Opcode.Value);
-        }
-        else if (!m_MMU.MemoryValue32((uint32_t)m_PROGRAM_COUNTER, m_Opcode.Value))
-        {
-            m_Reg.TriggerAddressException((int32_t)m_PROGRAM_COUNTER, EXC_RMISS);
-            m_PROGRAM_COUNTER = JumpToLocation;
-            PipelineStage = PIPELINE_STAGE_NORMAL;
-            continue;
-        }
-
+        m_Opcode.Value = *m_InstructionPtr;
         if (HaveDebugger())
         {
             if (HaveExecutionBP() && g_Debugger->ExecutionBP((uint32_t)m_PROGRAM_COUNTER))
@@ -121,7 +105,10 @@ void R4300iOp::ExecuteOps(uint32_t Cycles)
                 g_Settings->SaveBool(Debugger_SteppingOps, true);
             }
 
-            g_Debugger->CPUStepStarted(); // May set stepping ops/skip op
+            if (TrackCPUStepStarted())
+            {
+                g_Debugger->CPUStepStarted(); // May set stepping ops/skip op
+            }
 
             if (isStepping())
             {
@@ -136,7 +123,10 @@ void R4300iOp::ExecuteOps(uint32_t Cycles)
                 continue;
             }
 
-            g_Debugger->CPUStep();
+            if (TrackCPUStep())
+            {
+                g_Debugger->CPUStep();
+            }
         }
 
         (this->*Jump_Opcode[m_Opcode.op])();
@@ -147,12 +137,14 @@ void R4300iOp::ExecuteOps(uint32_t Cycles)
             Cycles -= CountPerOp;
         }
 
-        if (CDebugSettings::HaveDebugger())
+        if (TrackCPUStepEnded())
         {
             g_Debugger->CPUStepEnded();
         }
 
         m_PROGRAM_COUNTER += 4;
+        m_InstructionPtr++;
+
         switch (PipelineStage)
         {
         case PIPELINE_STAGE_NORMAL:
@@ -185,11 +177,13 @@ void R4300iOp::ExecuteOps(uint32_t Cycles)
                     SystemEvents.ExecuteEvents();
                 }
             }
+            UpdateInstructionMemory();
             break;
         case PIPELINE_STAGE_JUMP_DELAY_SLOT:
             PipelineStage = PIPELINE_STAGE_JUMP;
             m_PROGRAM_COUNTER = JumpToLocation;
             JumpToLocation = JumpDelayLocation;
+            UpdateInstructionMemory();
             break;
         case PIPELINE_STAGE_PERMLOOP_DELAY_DONE:
             m_PROGRAM_COUNTER = JumpToLocation;
@@ -200,9 +194,15 @@ void R4300iOp::ExecuteOps(uint32_t Cycles)
             {
                 SystemEvents.ExecuteEvents();
             }
+            UpdateInstructionMemory();
             break;
         default:
             g_Notify->BreakPoint(__FILE__, __LINE__);
+        }
+
+        if ((((uint32_t)m_PROGRAM_COUNTER) & 0xFFFUL) == 0)
+        {
+            UpdateInstructionMemory();
         }
     }
     g_SystemTimer->UpdateTimers();
@@ -3955,4 +3955,44 @@ bool R4300iOp::SetFPUException(void)
         }
     }
     return Res;
+}
+
+void R4300iOp::UpdateInstructionMemory()
+{
+    if (m_InstructionRegion != (m_PROGRAM_COUNTER & ~0xFFFLL))
+    {
+        m_InstructionRegion = m_PROGRAM_COUNTER & ~0xFFFLL;
+        if ((uint64_t)((int32_t)m_PROGRAM_COUNTER) != m_PROGRAM_COUNTER)
+        {
+            uint32_t PAddr;
+            bool MemoryUnused;
+            if (!m_TLB.VAddrToPAddr(m_InstructionRegion, PAddr, MemoryUnused))
+            {
+                m_Reg.TriggerAddressException(m_PROGRAM_COUNTER, MemoryUnused ? EXC_RADE : EXC_RMISS);
+                m_PROGRAM_COUNTER = m_System.m_JumpToLocation;
+                m_System.m_PipelineStage = PIPELINE_STAGE_NORMAL;
+                UpdateInstructionMemory();
+                return;
+            }
+            if (PAddr >= m_MMU.RdramSize())
+            {
+                g_Notify->BreakPoint(__FILE__, __LINE__);
+                return;
+            }
+            m_InstructionMemory = &m_MMU.Rdram()[PAddr];
+        }
+        else
+        {
+            m_InstructionMemory = m_MMU.MemoryPtr((uint32_t)m_InstructionRegion, 4, true);
+            if (m_InstructionMemory == nullptr)
+            {
+                m_Reg.TriggerAddressException((int32_t)m_PROGRAM_COUNTER, EXC_RMISS);
+                m_PROGRAM_COUNTER = m_System.m_JumpToLocation;
+                m_System.m_PipelineStage = PIPELINE_STAGE_NORMAL;
+                UpdateInstructionMemory();
+                return;
+            }
+        }
+    }
+    m_InstructionPtr = (uint32_t *)(((uint8_t *)m_InstructionMemory) + (m_PROGRAM_COUNTER & 0xFFFLL));
 }
