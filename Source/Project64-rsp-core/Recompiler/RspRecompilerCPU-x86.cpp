@@ -1,6 +1,6 @@
 #if defined(__i386__) || defined(_M_IX86)
 
-#include "RspRecompilerCPU.h"
+#include "RspRecompilerCPU-x86.h"
 #include "RspProfiling.h"
 #include "RspRecompilerOps-x86.h"
 #include "X86.h"
@@ -435,17 +435,17 @@ void CRSPRecompiler::ReOrderInstructions(uint32_t StartPC, uint32_t EndPC)
 {
     uint32_t InstructionCount = EndPC - StartPC;
     uint32_t Count, ReorderedOps, CurrentPC;
-    RSPOpcode PreviousOp, CurrentOp, RspOp;
+    RSPInstruction PreviousOp(StartPC, *(uint32_t *)(m_IMEM + (StartPC & 0xFFC)));
+    RSPInstruction NextOp(StartPC + 4, *(uint32_t *)(m_IMEM + ((StartPC + 4) & 0xFFC)));
+    RSPInstruction NextNextOp(StartPC + 8, *(uint32_t *)(m_IMEM + ((StartPC + 8) & 0xFFC)));
+    RSPOpcode CurrentOp, RspOp;
 
-    PreviousOp.Value = *(uint32_t *)(m_IMEM + (StartPC & 0xFFC));
-
-    if (IsOpcodeBranch(StartPC, PreviousOp))
+    if (PreviousOp.IsBranch())
     {
         // The sub block ends here anyway
         return;
     }
-
-    if (IsOpcodeNop(StartPC) && IsOpcodeNop(StartPC + 4) && IsOpcodeNop(StartPC + 8))
+    if (PreviousOp.IsNop() && NextOp.IsNop() && NextNextOp.IsNop())
     {
         // Don't even bother
         return;
@@ -472,7 +472,7 @@ void CRSPRecompiler::ReOrderInstructions(uint32_t StartPC, uint32_t EndPC)
     for (Count = 0; Count < InstructionCount; Count += 4)
     {
         CurrentPC = StartPC;
-        PreviousOp.Value = *(uint32_t *)(m_IMEM + (CurrentPC & 0xFFC));
+        PreviousOp = RSPInstruction(CurrentPC, *(uint32_t *)(m_IMEM + (CurrentPC & 0xFFC)));
         ReorderedOps = 0;
 
         for (;;)
@@ -484,11 +484,11 @@ void CRSPRecompiler::ReOrderInstructions(uint32_t StartPC, uint32_t EndPC)
             }
             CurrentOp.Value = *(uint32_t *)(m_IMEM + CurrentPC);
 
-            if (CompareInstructions(CurrentPC, &PreviousOp, &CurrentOp))
+            if (CompareInstructions(CurrentPC, PreviousOp, &CurrentOp))
             {
                 // Move current opcode up
                 *(uint32_t *)(m_IMEM + CurrentPC - 4) = CurrentOp.Value;
-                *(uint32_t *)(m_IMEM + CurrentPC) = PreviousOp.Value;
+                *(uint32_t *)(m_IMEM + CurrentPC) = PreviousOp.Value();
 
                 ReorderedOps++;
 
@@ -496,9 +496,10 @@ void CRSPRecompiler::ReOrderInstructions(uint32_t StartPC, uint32_t EndPC)
                 CPU_Message("Swapped %X and %X", CurrentPC - 4, CurrentPC);
 #endif
             }
-            PreviousOp.Value = *(uint32_t *)(m_IMEM + (CurrentPC & 0xFFC));
-
-            if (IsOpcodeNop(CurrentPC) && IsOpcodeNop(CurrentPC + 4) && IsOpcodeNop(CurrentPC + 8))
+            PreviousOp = RSPInstruction(CurrentPC, *(uint32_t *)(m_IMEM + (CurrentPC & 0xFFC)));
+            NextOp = RSPInstruction(CurrentPC + 4, *(uint32_t *)(m_IMEM + ((CurrentPC + 4) & 0xFFC)));
+            NextNextOp = RSPInstruction(CurrentPC + 8, *(uint32_t *)(m_IMEM + ((CurrentPC + 8) & 0xFFC)));
+            if (PreviousOp.IsNop() && NextOp.IsNop() && NextNextOp.IsNop())
             {
                 CurrentPC = EndPC;
             }
@@ -734,7 +735,7 @@ void CRSPRecompiler::BuildBranchLabels(void)
     {
         RspOp.Value = *(uint32_t *)(RSPInfo.IMEM + i);
 
-        if (IsOpcodeBranch(i, RspOp))
+        if (RSPInstruction(i, RspOp.Value).IsBranch())
         {
             if (RspCode.LabelCount >= (sizeof(RspCode.BranchLabels) / sizeof(RspCode.BranchLabels[0])) - 1)
             {
@@ -883,14 +884,14 @@ void CRSPRecompiler::CompilerRSPBlock(void)
                 continue;
             }
         }
+        RSP_LW_IMEM(m_CompilePC, &m_OpCode.Value);
 
 #ifdef X86_RECOMP_VERBOSE
-        if (!IsOpcodeNop(m_CompilePC))
+        if (!RSPInstruction(m_CompilePC, m_OpCode.Value).IsNop())
         {
             CPU_Message("X86 Address: %08X", RecompPos);
         }
 #endif
-        RSP_LW_IMEM(m_CompilePC, &m_OpCode.Value);
 
         if (m_OpCode.Value == 0xFFFFFFFF)
         {
@@ -1107,13 +1108,13 @@ void CRSPRecompiler::CompileHLETask(uint32_t Address)
                 // We could link the blocks here, but performance-wise it might be better to just let it run
             }
         }
+        RSP_LW_IMEM(m_CompilePC, &m_OpCode.Value);
 #ifdef X86_RECOMP_VERBOSE
-        if (!IsOpcodeNop(m_CompilePC))
+        if (!RSPInstruction(m_CompilePC, m_OpCode.Value).IsNop())
         {
             CPU_Message("X86 Address: %08X", RecompPos);
         }
 #endif
-        RSP_LW_IMEM(m_CompilePC, &m_OpCode.Value);
         (m_RecompilerOps.*RSP_Recomp_Opcode[m_OpCode.op])();
 
         switch (m_NextInstruction)

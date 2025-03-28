@@ -11,6 +11,7 @@
 
 class CRSPSystem;
 class RSPRegisterHandlerPlugin;
+class RSPInstruction;
 
 class CRSPRecompiler
 {
@@ -74,10 +75,7 @@ extern bool ChangedPC;
 #define EntireAccum (Low16BitAccum | Middle16BitAccum | High16BitAccum)
 
 bool DelaySlotAffectBranch(uint32_t PC);
-bool CompareInstructions(uint32_t PC, RSPOpcode * Top, RSPOpcode * Bottom);
-bool IsOpcodeBranch(uint32_t PC, RSPOpcode RspOp);
-bool IsOpcodeNop(uint32_t PC);
-
+bool CompareInstructions(uint32_t PC, const RSPInstruction & Top, RSPOpcode * Bottom);
 bool IsRegisterConstant(uint32_t Reg, uint32_t * Constant);
 
 #define MainBuffer 0
