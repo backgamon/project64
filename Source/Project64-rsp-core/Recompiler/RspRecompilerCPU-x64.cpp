@@ -41,11 +41,14 @@ void CRSPRecompiler::Reset()
 void * CRSPRecompiler::CompileHLETask(uint32_t Address)
 {
     void * funcPtr = RecompPos;
-    Log("====== Block %d ======", m_BlockID++);
-    Log("asm code at: %016llX", (uint64_t)funcPtr);
-    Log("Jump table: %X", Table);
-    Log("Start of block: %X", Address);
-    Log("====== Recompiled code ======");
+    if (LogAsmCode)
+    {
+        Log("====== Block %d ======", m_BlockID++);
+        Log("asm code at: %016llX", (uint64_t)funcPtr);
+        Log("Jump table: %X", Table);
+        Log("Start of block: %X", Address);
+        Log("====== Recompiled code ======");
+    }
 
     if (m_Assembler != nullptr)
     {
@@ -56,9 +59,10 @@ void * CRSPRecompiler::CompileHLETask(uint32_t Address)
     m_CodeHolder.reset();
     m_CodeHolder.init(m_Environment);
     m_CodeHolder.setErrorHandler(this);
-    m_CodeHolder.setLogger(nullptr);
+    m_CodeHolder.setLogger(LogAsmCode ? nullptr : nullptr);
 
     m_Assembler = new RspAssembler(&m_CodeHolder, m_CodeLog);
+    m_Assembler->setLogger(LogAsmCode ? m_Assembler : nullptr);
     m_Assembler->push(asmjit::x86::rbp);
     m_Assembler->mov(asmjit::x86::rbp, asmjit::x86::rsp);
     m_Assembler->sub(asmjit::x86::rsp, 0x30);
@@ -66,8 +70,8 @@ void * CRSPRecompiler::CompileHLETask(uint32_t Address)
     m_Assembler->mov(asmjit::x86::rax, asmjit::imm(AddressOf(&StartTimer)));
     m_Assembler->call(asmjit::x86::rax);
     m_Assembler->mov(asmjit::x86::rcx, asmjit::imm((uintptr_t)&m_System));
-    m_Assembler->mov(asmjit::x86::edx, asmjit::imm(0x10000));
-    m_Assembler->mov(asmjit::x86::r8d, asmjit::imm(0x118));
+    m_Assembler->mov(asmjit::x86::rdx, asmjit::imm(0x10000));
+    m_Assembler->mov(asmjit::x86::r8, asmjit::imm(0x118));
     m_Assembler->mov(asmjit::x86::rax, asmjit::imm(AddressOf(&CRSPSystem::ExecuteOps)));
     m_Assembler->call(asmjit::x86::rax);
     m_Assembler->mov(asmjit::x86::rax, asmjit::imm(AddressOf(&StopTimer)));
