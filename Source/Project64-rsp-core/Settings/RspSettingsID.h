@@ -5,11 +5,10 @@ enum
     Set_BreakOnStart,
     Set_CPUCore,
     Set_LogRDP,
-    Set_LogX86Code,
+    Set_LogAsmCode,
     Set_Profiling,
     Set_IndvidualBlock,
     Set_ShowErrors,
-    Set_HleAlistTask,
     Set_SyncCPU,
 
     // Compiler settings

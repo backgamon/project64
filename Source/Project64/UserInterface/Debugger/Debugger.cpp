@@ -427,6 +427,7 @@ void CDebuggerUI::OpenStackTraceWindow(void)
     if (m_StackTrace == nullptr)
     {
         m_StackTrace = new CDebugStackTrace(this);
+        g_Settings->SaveBool(Debugger_TrackCPUStepEnded, true);
     }
     m_StackTrace->ShowWindow();
 }
@@ -784,6 +785,11 @@ void CDebuggerUI::WaitForStep(void)
     g_Settings->SaveBool(Debugger_WaitingForStep, true);
     m_StepEvent.IsTriggered(SyncEvent::INFINITE_TIMEOUT);
     g_Settings->SaveBool(Debugger_WaitingForStep, false);
+}
+
+void CDebuggerUI::CopyCommands(uint32_t address, uint32_t count)
+{
+    m_CommandsView->CopyCommands(address, count);
 }
 
 void CDebuggerUI::StartAutorunScripts(void)

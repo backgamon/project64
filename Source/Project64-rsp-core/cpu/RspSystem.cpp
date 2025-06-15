@@ -1,6 +1,6 @@
 #include <Project64-rsp-core/RSPDebugger.h>
 #include <Project64-rsp-core/RSPInfo.h>
-#include <Project64-rsp-core/Recompiler/RspRecompilerCPU.h>
+#include <Project64-rsp-core/Recompiler/RspRecompilerCPU-x86.h>
 #include <Project64-rsp-core/Settings/RspSettings.h>
 #include <Project64-rsp-core/cpu/RSPCpu.h>
 #include <Project64-rsp-core/cpu/RSPRegisters.h>
@@ -120,27 +120,32 @@ void CRSPSystem::Reset(RSP_INFO & Info)
     {
         m_RdramSize = 0x00400000;
     }
+    if (m_RSPRegisterHandler != nullptr)
+    {
+        delete m_RSPRegisterHandler;
+        m_RSPRegisterHandler = nullptr;
+    }
     m_RSPRegisterHandler = new RSPRegisterHandlerPlugin(*this);
 
     if (m_SyncSystem != nullptr)
     {
         m_SyncSystem->Reset(Info);
     }
+#if defined(__amd64__) || defined(_M_X64)
+    m_Recompiler.Reset();
+#endif
 }
 
 void CRSPSystem::RomClosed(void)
 {
-    if (m_RSPRegisterHandler != nullptr)
-    {
-        delete m_RSPRegisterHandler;
-        m_RSPRegisterHandler = nullptr;
-    }
 }
 
+#if defined(__i386__) || defined(_M_IX86)
 void CRSPSystem::RunRecompiler(void)
 {
     m_Recompiler.RunCPU();
 }
+#endif
 
 void CRSPSystem::ExecuteOps(uint32_t Cycles, uint32_t TargetPC)
 {

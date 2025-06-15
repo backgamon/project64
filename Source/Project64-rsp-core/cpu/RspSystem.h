@@ -1,7 +1,8 @@
 #pragma once
 #include <Project64-rsp-core/Hle/HleTask.h>
 #include <Project64-rsp-core/RSPInfo.h>
-#include <Project64-rsp-core/Recompiler/RspRecompilerCPU.h>
+#include <Project64-rsp-core/Recompiler/RspRecompilerCPU-x64.h>
+#include <Project64-rsp-core/Recompiler/RspRecompilerCPU-x86.h>
 #include <Project64-rsp-core/cpu/RSPInterpreterOps.h>
 #include <Project64-rsp-core/cpu/RSPRegisters.h>
 #include <Project64-rsp-core/cpu/RspPipelineStage.h>
@@ -16,6 +17,7 @@ class CRSPSystem :
     friend class RSPOp;
     friend class CRSPRecompilerOps;
     friend class CRSPRecompiler;
+    friend class RspCodeBlock;
     friend class CHleTask;
     friend class RSPDebuggerUI;
     friend class CRDPLog;
@@ -32,7 +34,9 @@ public:
     void Reset(RSP_INFO & Info);
     void RomClosed(void);
 
+#if defined(__i386__) || defined(_M_IX86)
     void RunRecompiler(void);
+#endif
     void ExecuteOps(uint32_t Cycles, uint32_t TargetPC);
     void SetupSyncCPU();
     bool IsSyncSystem(void);

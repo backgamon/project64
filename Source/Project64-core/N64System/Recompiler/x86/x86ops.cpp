@@ -253,6 +253,15 @@ void CX86Ops::JecxzLabel(const char * LabelName, asmjit::Label & JumpLabel)
     jecxz(JumpLabel);
 }
 
+void CX86Ops::JeLabel8(const char * LabelName, asmjit::Label & JumpLabel)
+{
+    if (CDebugSettings::bRecordRecompilerAsm())
+    {
+        AddLabelSymbol(JumpLabel, LabelName);
+    }
+    short_().je(JumpLabel);
+}
+
 void CX86Ops::JeLabel(const char * LabelName, asmjit::Label & JumpLabel)
 {
     if (CDebugSettings::bRecordRecompilerAsm())

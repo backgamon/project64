@@ -385,7 +385,7 @@ bool CN64System::LoadFileImage(const char * FileLoc)
             {
                 g_Settings->SaveString(File_DiskIPLPath, FileLoc);
             }
-            else if (g_DDRom->CicChipID() == CIC_NUS_DDUS)
+            else if (g_DDRom->CicChipID() == CIC_NUS_8501)
             {
                 g_Settings->SaveString(File_DiskIPLUSAPath, FileLoc);
             }
@@ -460,7 +460,7 @@ bool CN64System::LoadFileImageIPL(const char * FileLoc)
 
         if (g_DDRom->CicChipID() == CIC_NUS_8303)
             g_Settings->SaveString(File_DiskIPLPath, FileLoc);
-        else if (g_DDRom->CicChipID() == CIC_NUS_DDUS)
+        else if (g_DDRom->CicChipID() == CIC_NUS_8501)
             g_Settings->SaveString(File_DiskIPLUSAPath, FileLoc);
         else if (g_DDRom->CicChipID() == CIC_NUS_8401)
             g_Settings->SaveString(File_DiskIPLTOOLPath, FileLoc);
@@ -553,7 +553,7 @@ bool CN64System::RunFileImage(const char * FileLoc)
         {
             g_Settings->SaveString(File_DiskIPLPath, FileLoc);
         }
-        else if (g_Rom->CicChipID() == CIC_NUS_DDUS)
+        else if (g_Rom->CicChipID() == CIC_NUS_8501)
         {
             g_Settings->SaveString(File_DiskIPLUSAPath, FileLoc);
         }
@@ -810,10 +810,6 @@ void CN64System::EndEmulation(void)
 
 void CN64System::Pause()
 {
-    if (m_Plugins && m_Plugins->Control()->EmulationPaused)
-    {
-        m_Plugins->Control()->EmulationPaused();
-    }
     if (m_EndEmulation)
     {
         return;
@@ -1162,7 +1158,7 @@ void CN64System::SyncSystem()
         ErrorFound = true;
     }
 #endif
-    if ((uint32_t)m_Reg.m_PROGRAM_COUNTER != (uint32_t)m_SyncCPU->m_Reg.m_PROGRAM_COUNTER)
+    if (m_Reg.m_PROGRAM_COUNTER != m_SyncCPU->m_Reg.m_PROGRAM_COUNTER)
     {
         ErrorFound = true;
     }
@@ -1341,9 +1337,9 @@ void CN64System::DumpSyncErrors()
             Error.Log("m_CurrentSP,%X,%X\r\n", m_CurrentSP, GPR[29].UW[0]);
         }
 #endif
-        if ((uint32_t)m_Reg.m_PROGRAM_COUNTER != (uint32_t)m_SyncCPU->m_Reg.m_PROGRAM_COUNTER)
+        if (m_Reg.m_PROGRAM_COUNTER != m_SyncCPU->m_Reg.m_PROGRAM_COUNTER)
         {
-            Error.LogF("PROGRAM_COUNTER 0x%08X,         0x%08X\r\n", (uint32_t)m_Reg.m_PROGRAM_COUNTER, (uint32_t)m_SyncCPU->m_Reg.m_PROGRAM_COUNTER);
+            Error.LogF("PROGRAM_COUNTER 0x%08X%08X, 0x%08X%08X\r\n", (uint32_t)(m_Reg.m_PROGRAM_COUNTER >> 32), (uint32_t)m_Reg.m_PROGRAM_COUNTER, (uint32_t)(m_SyncCPU->m_Reg.m_PROGRAM_COUNTER >> 32), (uint32_t)m_SyncCPU->m_Reg.m_PROGRAM_COUNTER);
         }
         if (b32BitCore())
         {
@@ -1873,7 +1869,7 @@ bool CN64System::LoadState(const char * FileName)
         }
         zlib_filefunc64_def ffunc;
         fill_win32_filefunc64W(&ffunc);
-        unzFile file = unzOpen2_64(stdstr((std::string &)SaveFile).ToUTF16().c_str(), &ffunc);
+        unzFile file = unzOpen2_64(stdstr(std::string(SaveFile)).ToUTF16().c_str(), &ffunc);
         int port = -1;
         if (file != nullptr)
         {
@@ -1938,7 +1934,7 @@ bool CN64System::LoadState(const char * FileName)
                 {
                     uint64_t ReadProgramCounter;
                     unzReadCurrentFile(file, &ReadProgramCounter, sizeof(ReadProgramCounter));
-                    m_Reg.m_PROGRAM_COUNTER = (uint32_t)ReadProgramCounter;
+                    m_Reg.m_PROGRAM_COUNTER = (int32_t)ReadProgramCounter;
                 }
                 unzReadCurrentFile(file, m_Reg.m_GPR, sizeof(int64_t) * 32);
                 unzReadCurrentFile(file, m_Reg.m_FPR, sizeof(int64_t) * 32);

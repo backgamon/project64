@@ -81,6 +81,7 @@
 #define IDD_Settings_GameDiskDrive      217
 #define IDD_Enhancement_Plugins         218
 #define IDD_Debugger_ScriptsAutorun     225
+#define IDD_Debugger_CopyCommands       230
 #define IDC_MENU_ITEM_TEXT              1000
 #define IDC_CLOSE_BUTTON                1001
 #define IDC_LIST2                       1003
@@ -255,19 +256,18 @@
 #define IDC_DIR_FRAME1                  1101
 #define IDC_ROM_FASTSP                  1101
 #define IDC_INFO                        1101
-#define IDC_OVER_CLOCK_MODIFIER_TEXT    1101
-#define IDC_DISKSEEKTIMING_TEXT1        1101
 #define IDC_AUDIO_SIGNAL                1102
 #define IDC_DIR_TEXTURE_FRAME           1102
 #define IDC_ENTER_CODE                  1102
 #define IDC_DESCRIPTION                 1102
 #define IDC_DIR_FRAME3                  1103
-#define IDC_OVER_CLOCK_MODIFIER         1103
 #define IDC_REQUEST_DESCPTION           1103
 #define IDC_DIR_FRAME4                  1104
 #define IDC_REQUEST_LINK                1104
 #define IDC_DIR_FRAME5                  1105
 #define IDC_MACHINE_ID                  1105
+#define IDC_OVER_CLOCK_MODIFIER_TEXT    1106
+#define IDC_OVER_CLOCK_MODIFIER         1107
 #define IDC_MAXROMS_TXT                 1111
 #define IDC_ROMSEL_TEXT2                1112
 #define IDC_R0_EDIT                     1112
@@ -697,7 +697,7 @@
 #define IDC_SCRIPTS_GRP                 1578
 #define IDC_F4_LBL                      1579
 #define IDC_OUTPUT_GRP                  1579
-#define IDC_DISKSEEKTIMING_TEXT2        1579
+#define IDC_DISKSEEKTIMING_TEXT         1579
 #define IDC_F5_LBL                      1580
 #define IDC_EVAL_LBL                    1580
 #define IDC_DISKSEEKTIMING              1580
@@ -859,6 +859,7 @@
 #define IDC_RDRAM_SIZE_KNOWN            1738
 #define IDC_MEMORY_SIZE_UNKOWN_TEXT     1739
 #define IDC_MEMORY_SIZE_KNOWN_TEXT      1740
+#define IDC_COUNT_EDIT                  1741
 #define ID_POPUPMENU_PLAYGAMEWITHDISK   40008
 #define ID_POPUPMENU_ADDSYMBOL          40013
 #define ID_POPUPMENU_VIEWDISASM         40017
@@ -869,6 +870,7 @@
 #define ID_POPUP_RUN                    40024
 #define ID_POPUP_STOP                   40025
 #define ID_POPUPMENU_INSERTNOP          40026
+#define ID_POPUPMENU_COPY_COMMANDS      40200
 #define ID_POPUPMENU_RESTORE            40027
 #define ID_POPUPMENU_RESTOREALL         40029
 #define ID_POPUPMENU_EDIT               40030

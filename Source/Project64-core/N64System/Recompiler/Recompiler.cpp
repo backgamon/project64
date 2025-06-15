@@ -85,14 +85,14 @@ void CRecompiler::RecompilerMain_VirtualTable()
             m_System.m_PipelineStage = PIPELINE_STAGE_NORMAL;
             if (!m_MMU.ValidVaddr((uint32_t)PC))
             {
-                g_Notify->DisplayError(stdstr_f("Failed to translate PC to a PAddr: %X\n\nEmulation stopped", PC).c_str());
+                g_Notify->DisplayError(stdstr_f("Failed to translate PC to a PAddr: %X\n\nEmulation stopped", (uint32_t)PC).c_str());
                 return;
             }
             continue;
         }
 
-        PCCompiledFunc_TABLE & table = FunctionTable()[PC >> 0xC];
-        uint32_t TableEntry = (PC & 0xFFF) >> 2;
+        PCCompiledFunc_TABLE & table = FunctionTable()[(uint32_t)PC >> 0xC];
+        uint32_t TableEntry = ((uint32_t)PC & 0xFFF) >> 2;
         if (table)
         {
             CCompiledFunc * info = table[TableEntry];
@@ -138,13 +138,13 @@ void CRecompiler::RecompilerMain_Lookup()
         if (!m_MMU.VAddrToPAddr((uint32_t)PROGRAM_COUNTER, PhysicalAddr))
         {
             m_Reg.TriggerAddressException(PROGRAM_COUNTER, EXC_RMISS);
+            PROGRAM_COUNTER = m_System.m_JumpToLocation;
+            m_System.m_PipelineStage = PIPELINE_STAGE_NORMAL;
             if (!m_MMU.VAddrToPAddr((uint32_t)PROGRAM_COUNTER, PhysicalAddr))
             {
                 g_Notify->DisplayError(stdstr_f("Failed to translate PC to a PAddr: %X\n\nEmulation stopped", PROGRAM_COUNTER).c_str());
                 m_EndEmulation = true;
             }
-            PROGRAM_COUNTER = m_System.m_JumpToLocation;
-            m_System.m_PipelineStage = PIPELINE_STAGE_NORMAL;
             continue;
         }
         if (PhysicalAddr < m_System.RdramSize())
