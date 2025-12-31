@@ -7,7 +7,7 @@
 #include <Project64-rsp-core/RSPInfo.h>
 #include <Project64-rsp-core/Recompiler/RspRecompilerOps-x86.h>
 #include <Project64-rsp-core/cpu/RSPCpu.h>
-#include <Project64-rsp-core/cpu/RSPInstruction.h>
+#include <Project64-rsp-core/cpu/RSPInstruction-x86.h>
 #include <Project64-rsp-core/cpu/RSPInterpreterOps.h>
 #include <Project64-rsp-core/cpu/RSPRegisters.h>
 #include <Project64-rsp-core/cpu/RspLog.h>
@@ -2446,7 +2446,7 @@ void CRSPRecompilerOps::Cop2_MF(void)
     }
 
 #ifndef Compile_Cop2
-    Cheat_r4300iOpcode(&RSPOp::Cop2_MF, "&RSPOp::Cop2_MF");
+    Cheat_r4300iOpcode(RSP_Cop2_MF, "RSP_Cop2_MF");
 #else
     char Reg[256];
     uint8_t element = (uint8_t)(m_OpCode.sa >> 1);

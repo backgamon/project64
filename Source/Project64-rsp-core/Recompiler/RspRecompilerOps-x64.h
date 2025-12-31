@@ -1,6 +1,7 @@
 #pragma once
 #if defined(__amd64__) || defined(_M_X64)
 
+#include "RspRegState.h"
 #include <Project64-rsp-core/Recompiler/asmjit.h>
 #include <Project64-rsp-core/cpu/RSPInterpreterOps.h>
 
@@ -13,7 +14,15 @@ class CRSPRecompilerOps
 {
     enum
     {
-        FunctionStackSize = 40,
+        FunctionStackSize = 32,
+    };
+
+    enum class AccumLocation
+    {
+        High,
+        Middle,
+        Low,
+        Entire,
     };
 
 public:
@@ -176,8 +185,13 @@ public:
     void ExitCodeBlock(void);
 
 private:
-    void LoadVectorRegister(asmjit::x86::Xmm xmmReg, int32_t vectorReg, int32_t e);
-    void Cheat_r4300iOpcode(RSPOp::Func FunctAddress, const char * FunctName);
+    void LoadVectorRegister(asmjit::x86::Xmm xmmReg, uint8_t vectorReg, uint8_t e);
+    void Cheat_r4300iOpcode(RSPOp::Func FunctAddress, const char * FunctName, bool CommentOp = true);
+    bool WriteToVectorDest(uint32_t DestReg, uint32_t PC);
+    bool WriteToAccum(AccumLocation Location, uint32_t PC);
+    uint32_t VectorOffset(uint8_t vectorReg) const;
+    uint32_t AccumOffset(AccumLocation location) const;
+    uint32_t FlagOffset(RspFlags flag) const;
 
     CRSPSystem & m_System;
     CRSPRecompiler & m_Recompiler;
@@ -185,6 +199,7 @@ private:
     const uint32_t & m_CompilePC;
     const RspCodeBlock *& m_CurrentBlock;
     RSPPIPELINE_STAGE & m_NextInstruction;
+    uint8_t *& m_DMEM;
     CRSPRegisters & m_Reg;
     UWORD32 * m_GPR;
     RSPVector * m_Vect;
@@ -193,6 +208,7 @@ private:
     RSPFlag &m_VCCL, &m_VCCH;
     RSPFlag & m_VCE;
     RspAssembler *& m_Assembler;
+    CRspRegState & m_RegState;
     bool m_DelayAffectBranch;
 };
 
