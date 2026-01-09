@@ -88,6 +88,7 @@ void CRSPRecompilerOps::J(void)
         }
         else if (m_Recompiler.FindBranchJump(Target, Jump))
         {
+            m_RegState.WriteBackRegisters();
             m_Assembler->JmpLabel(stdstr_f("0x%X", Target).c_str(), Jump);
         }
     }
@@ -122,6 +123,7 @@ void CRSPRecompilerOps::JAL(void)
             const RspCodeBlock * FunctionBlock = m_CurrentBlock ? m_CurrentBlock->GetFunctionBlock(Target) : nullptr;
             if (FunctionBlock != nullptr)
             {
+                m_RegState.WriteBackRegisters();
                 if (SyncCPU)
                 {
                     m_Assembler->MoveConstToVariable(m_System.m_SP_PC_REG, "RSP PC", Target);
@@ -235,6 +237,7 @@ void CRSPRecompilerOps::BEQ(void)
                 {
                     g_Notify->BreakPoint(__FILE__, __LINE__);
                 }
+                m_RegState.WriteBackRegisters();
                 m_Assembler->JeLabel(stdstr_f("0x%X", Target).c_str(), Jump);
             }
         }
@@ -245,6 +248,7 @@ void CRSPRecompilerOps::BEQ(void)
             {
                 g_Notify->BreakPoint(__FILE__, __LINE__);
             }
+            m_RegState.WriteBackRegisters();
             m_Assembler->CompConstToVariable(&BranchCompare, "BranchCompare", true);
             m_Assembler->JeLabel(stdstr_f("0x%X", Target).c_str(), Jump);
         }
@@ -364,6 +368,7 @@ void CRSPRecompilerOps::BNE(void)
             {
                 g_Notify->BreakPoint(__FILE__, __LINE__);
             }
+            m_RegState.WriteBackRegisters();
             m_Assembler->CompConstToVariable(&BranchCompare, "BranchCompare", true);
             m_Assembler->JeLabel(stdstr_f("0x%X", Target).c_str(), Jump);
         }
@@ -427,6 +432,7 @@ void CRSPRecompilerOps::BLEZ(void)
         }
         if (!m_DelayAffectBranch)
         {
+            m_RegState.WriteBackRegisters();
             m_Assembler->CompConstToVariable(&m_GPR[m_OpCode.rs].W, GPR_Name(m_OpCode.rs), 0);
             asmjit::Label Jump;
             if (!m_Recompiler.FindBranchJump(Target, Jump))
@@ -502,6 +508,7 @@ void CRSPRecompilerOps::BGTZ(void)
         {
             g_Notify->BreakPoint(__FILE__, __LINE__);
         }
+        m_RegState.WriteBackRegisters();
         if (!m_DelayAffectBranch)
         {
             m_Assembler->CompConstToVariable(&m_GPR[m_OpCode.rs].W, GPR_Name(m_OpCode.rs), 0);
@@ -533,7 +540,28 @@ void CRSPRecompilerOps::BGTZ(void)
 
 void CRSPRecompilerOps::ADDI(void)
 {
-    Cheat_r4300iOpcode(&RSPOp::ADDI, "RSPOp::ADDI");
+    m_Assembler->comment(stdstr_f("%X %s", m_CompilePC, RSPInstruction(m_CompilePC, m_OpCode.Value).NameAndParam().c_str()).c_str());
+    if (m_OpCode.rt == 0)
+    {
+        return;
+    }
+    if (m_RegState.IsGprConst(m_OpCode.rs))
+    {
+        uint32_t result = m_RegState.GetGprConstValue(m_OpCode.rs) + (int16_t)m_OpCode.immediate;
+        m_Assembler->mov(asmjit::x86::dword_ptr(asmjit::x86::r14, GprOffset(m_OpCode.rt)), result);
+        m_RegState.SetGprConst(m_OpCode.rt, result);
+    }
+    else
+    {
+        m_Assembler->mov(asmjit::x86::eax, asmjit::x86::dword_ptr(asmjit::x86::r14, GprOffset(m_OpCode.rs)));
+
+        if (m_OpCode.immediate != 0)
+        {
+            m_Assembler->add(asmjit::x86::eax, (int32_t)((int16_t)m_OpCode.immediate));
+        }
+        m_Assembler->mov(asmjit::x86::dword_ptr(asmjit::x86::r14, GprOffset(m_OpCode.rt)), asmjit::x86::eax);
+        m_RegState.SetGprUnknown(m_OpCode.rt);
+    }
 }
 
 void CRSPRecompilerOps::ADDIU(void)
@@ -553,7 +581,32 @@ void CRSPRecompilerOps::SLTIU(void)
 
 void CRSPRecompilerOps::ANDI(void)
 {
-    Cheat_r4300iOpcode(&RSPOp::ANDI, "RSPOp::ANDI");
+    m_Assembler->comment(stdstr_f("%X %s", m_CompilePC, RSPInstruction(m_CompilePC, m_OpCode.Value).NameAndParam().c_str()).c_str());
+    if (m_OpCode.rt == 0)
+    {
+        return;
+    }
+    if (m_RegState.IsGprConst(m_OpCode.rs))
+    {
+        uint32_t result = m_RegState.GetGprConstValue(m_OpCode.rs) & (uint16_t)m_OpCode.immediate;
+        m_Assembler->mov(asmjit::x86::dword_ptr(asmjit::x86::r14, GprOffset(m_OpCode.rt)), result);
+        m_RegState.SetGprConst(m_OpCode.rt, result);
+    }
+    else
+    {
+        m_Assembler->mov(asmjit::x86::eax, asmjit::x86::dword_ptr(asmjit::x86::r14, GprOffset(m_OpCode.rs)));
+
+        if (m_OpCode.immediate == 0)
+        {
+            m_Assembler->xor_(asmjit::x86::eax, asmjit::x86::eax);
+        }
+        else
+        {
+            m_Assembler->and_(asmjit::x86::eax, (uint16_t)m_OpCode.immediate);
+        }
+        m_Assembler->mov(asmjit::x86::dword_ptr(asmjit::x86::r14, GprOffset(m_OpCode.rt)), asmjit::x86::eax);
+        m_RegState.SetGprUnknown(m_OpCode.rt);
+    }
 }
 
 void CRSPRecompilerOps::ORI(void)
@@ -640,17 +693,64 @@ void CRSPRecompilerOps::SC2(void)
 
 void CRSPRecompilerOps::Special_SLL(void)
 {
+    m_Assembler->comment(stdstr_f("%X %s", m_CompilePC, RSPInstruction(m_CompilePC, m_OpCode.Value).NameAndParam().c_str()).c_str());
     if (m_OpCode.rd == 0)
     {
-        m_Recompiler.Log("  %X %s", m_CompilePC, RSPInstruction(m_CompilePC, m_OpCode.Value).NameAndParam().c_str());
         return;
     }
-    Cheat_r4300iOpcode(&RSPOp::Special_SLL, "RSPOp::Special_SLL");
+    if (m_RegState.IsGprConst(m_OpCode.rt))
+    {
+        uint32_t result = m_RegState.GetGprConstValue(m_OpCode.rt) << m_OpCode.sa;
+        m_Assembler->mov(asmjit::x86::dword_ptr(asmjit::x86::r14, GprOffset(m_OpCode.rd)), result);
+        m_RegState.SetGprConst(m_OpCode.rd, result);
+    }
+    else
+    {
+        if (m_OpCode.sa == 0)
+        {
+            m_Assembler->mov(asmjit::x86::eax, asmjit::x86::dword_ptr(asmjit::x86::r14, GprOffset(m_OpCode.rt)));
+            m_Assembler->mov(asmjit::x86::dword_ptr(asmjit::x86::r14, GprOffset(m_OpCode.rd)), asmjit::x86::eax);
+        }
+        else
+        {
+            m_Assembler->mov(asmjit::x86::eax, asmjit::x86::dword_ptr(asmjit::x86::r14, GprOffset(m_OpCode.rt)));
+            m_Assembler->shl(asmjit::x86::eax, m_OpCode.sa);
+            m_Assembler->mov(asmjit::x86::dword_ptr(asmjit::x86::r14, GprOffset(m_OpCode.rd)), asmjit::x86::eax);
+        }
+        m_RegState.SetGprUnknown(m_OpCode.rd);
+    }
 }
 
 void CRSPRecompilerOps::Special_SRL(void)
 {
-    Cheat_r4300iOpcode(&RSPOp::Special_SRL, "RSPOp::Special_SRL");
+    m_Assembler->comment(stdstr_f("%X %s", m_CompilePC, RSPInstruction(m_CompilePC, m_OpCode.Value).NameAndParam().c_str()).c_str());
+
+    if (m_OpCode.rd == 0)
+    {
+        return;
+    }
+
+    if (m_RegState.IsGprConst(m_OpCode.rt))
+    {
+        uint32_t result = m_RegState.GetGprConstValue(m_OpCode.rt) >> m_OpCode.sa;
+        m_Assembler->mov(asmjit::x86::dword_ptr(asmjit::x86::r14, GprOffset(m_OpCode.rd)), result);
+        m_RegState.SetGprConst(m_OpCode.rd, result);
+    }
+    else
+    {
+        if (m_OpCode.sa == 0)
+        {
+            m_Assembler->mov(asmjit::x86::eax, asmjit::x86::dword_ptr(asmjit::x86::r14, GprOffset(m_OpCode.rt)));
+            m_Assembler->mov(asmjit::x86::dword_ptr(asmjit::x86::r14, GprOffset(m_OpCode.rd)), asmjit::x86::eax);
+        }
+        else
+        {
+            m_Assembler->mov(asmjit::x86::eax, asmjit::x86::dword_ptr(asmjit::x86::r14, GprOffset(m_OpCode.rt)));
+            m_Assembler->shr(asmjit::x86::eax, m_OpCode.sa);
+            m_Assembler->mov(asmjit::x86::dword_ptr(asmjit::x86::r14, GprOffset(m_OpCode.rd)), asmjit::x86::eax);
+        }
+        m_RegState.SetGprUnknown(m_OpCode.rd);
+    }
 }
 
 void CRSPRecompilerOps::Special_SRA(void)
@@ -938,50 +1038,57 @@ void CRSPRecompilerOps::Vector_VMADH(void)
 
 void CRSPRecompilerOps::Vector_VADD(void)
 {
-    bool writeToDest = WriteToVectorDest(m_OpCode.sa, m_CompilePC);
+    bool writeToDest = WriteToVectorDest(m_OpCode.vd, m_CompilePC);
     bool writeToAccum = WriteToAccum(AccumLocation::Low, m_CompilePC);
 
     m_Assembler->comment(stdstr_f("%X %s", m_CompilePC, RSPInstruction(m_CompilePC, m_OpCode.Value).NameAndParam().c_str()).c_str());
+    asmjit::x86::Xmm vs, vte, vcol;
     if (writeToAccum || writeToDest)
     {
-        m_Assembler->movdqa(asmjit::x86::xmm0, asmjit::x86::ptr(asmjit::x86::r14, VectorOffset(m_OpCode.vs)));
-        LoadVectorRegister(asmjit::x86::xmm1, m_OpCode.vt, m_OpCode.e);
+        vte = m_RegState.MapXmmTemp(true, m_OpCode.vt, m_OpCode.e);
+        vs = writeToDest ? m_RegState.MapXmmReg(m_OpCode.vd, m_OpCode.vs) : m_RegState.MapXmmTemp(true, m_OpCode.vs);
         if (!m_RegState.IsFlagZero(RspFlags::VCOL))
         {
-            m_Assembler->movdqa(asmjit::x86::xmm2, asmjit::x86::ptr(asmjit::x86::r14, FlagOffset(RspFlags::VCOL)));
+            vcol = m_RegState.MapXmmTemp(false, 0);
+            m_Assembler->movdqa(vcol, asmjit::x86::ptr(asmjit::x86::r14, FlagOffset(RspFlags::VCOL)));
         }
     }
     if (writeToAccum)
     {
-        m_Assembler->movdqa(asmjit::x86::xmm3, asmjit::x86::xmm0);
-        m_Assembler->paddw(asmjit::x86::xmm3, asmjit::x86::xmm1);
+        asmjit::x86::Xmm accum = m_RegState.MapXmmTemp(false, 0);
+        m_Assembler->movdqa(accum, vs);
+        m_Assembler->paddw(accum, vte);
         if (!m_RegState.IsFlagZero(RspFlags::VCOL))
         {
-            m_Assembler->paddw(asmjit::x86::xmm3, asmjit::x86::xmm2);
+            m_Assembler->paddw(accum, vcol);
         }
-        m_Assembler->movdqa(asmjit::x86::ptr(asmjit::x86::r14, AccumOffset(AccumLocation::Low)), asmjit::x86::xmm3);
+        m_Assembler->movdqa(asmjit::x86::ptr(asmjit::x86::r14, AccumOffset(AccumLocation::Low)), accum);
+        m_RegState.UnprotectXmm(accum);
     }
     if (writeToDest)
     {
-        m_Assembler->paddsw(asmjit::x86::xmm0, asmjit::x86::xmm1);
+        m_Assembler->paddsw(vs, vte);
         if (!m_RegState.IsFlagZero(RspFlags::VCOL))
         {
-            m_Assembler->paddsw(asmjit::x86::xmm0, asmjit::x86::xmm2);
+            m_Assembler->paddsw(vs, vcol);
         }
-        m_Assembler->movdqa(asmjit::x86::ptr(asmjit::x86::r14, VectorOffset(m_OpCode.vd)), asmjit::x86::xmm0);
+    }
+    if (vcol.isValid())
+    {
+        m_RegState.UnprotectXmm(vcol);
     }
 
     if (!m_RegState.IsFlagZero(RspFlags::VCOL) || !m_RegState.IsFlagZero(RspFlags::VCOH))
     {
-        m_Assembler->pxor(asmjit::x86::xmm0, asmjit::x86::xmm0);
+        asmjit::x86::Xmm zero = m_RegState.MapXmmZero();
         if (!m_RegState.IsFlagZero(RspFlags::VCOL))
         {
-            m_Assembler->movdqa(asmjit::x86::ptr(asmjit::x86::r14, FlagOffset(RspFlags::VCOL)), asmjit::x86::xmm0);
+            m_Assembler->movdqa(asmjit::x86::ptr(asmjit::x86::r14, FlagOffset(RspFlags::VCOL)), zero);
             m_RegState.SetFlagZero(RspFlags::VCOL);
         }
         if (!m_RegState.IsFlagZero(RspFlags::VCOH))
         {
-            m_Assembler->movdqa(asmjit::x86::ptr(asmjit::x86::r14, FlagOffset(RspFlags::VCOH)), asmjit::x86::xmm0);
+            m_Assembler->movdqa(asmjit::x86::ptr(asmjit::x86::r14, FlagOffset(RspFlags::VCOH)), zero);
             m_RegState.SetFlagZero(RspFlags::VCOH);
         }
     }
@@ -1054,7 +1161,21 @@ void CRSPRecompilerOps::Vector_VMRG(void)
 
 void CRSPRecompilerOps::Vector_VAND(void)
 {
-    Cheat_r4300iOpcode(&RSPOp::Vector_VAND, "RSPOp::Vector_VAND");
+    m_Assembler->comment(stdstr_f("%X %s", m_CompilePC, RSPInstruction(m_CompilePC, m_OpCode.Value).NameAndParam().c_str()).c_str());
+    bool writeToAccum = WriteToAccum(AccumLocation::Low, m_CompilePC);
+    bool writeToDest = WriteToVectorDest(m_OpCode.vd, m_CompilePC);
+
+    asmjit::x86::Xmm vs, vte;
+    if (writeToAccum || writeToDest)
+    {
+        vte = m_RegState.MapXmmTemp(true, m_OpCode.vt, m_OpCode.e);
+        vs = writeToDest ? m_RegState.MapXmmReg(m_OpCode.vd, m_OpCode.vs) : m_RegState.MapXmmTemp(true, m_OpCode.vs);
+        m_Assembler->pand(vs, vte);
+    }
+    if (writeToAccum)
+    {
+        m_Assembler->movdqa(asmjit::x86::ptr(asmjit::x86::r14, AccumOffset(AccumLocation::Low)), vs);
+    }
 }
 
 void CRSPRecompilerOps::Vector_VNAND(void)
@@ -1074,7 +1195,29 @@ void CRSPRecompilerOps::Vector_VNOR(void)
 
 void CRSPRecompilerOps::Vector_VXOR(void)
 {
-    Cheat_r4300iOpcode(&RSPOp::Vector_VXOR, "RSPOp::Vector_VXOR");
+    m_Assembler->comment(stdstr_f("%X %s", m_CompilePC, RSPInstruction(m_CompilePC, m_OpCode.Value).NameAndParam().c_str()).c_str());
+    bool writeToAccum = WriteToAccum(AccumLocation::Low, m_CompilePC);
+    bool writeToDest = WriteToVectorDest(m_OpCode.vd, m_CompilePC);
+    if (m_OpCode.vs == m_OpCode.vt && m_OpCode.e == 0)
+    {
+        asmjit::x86::Xmm reg;
+        if (writeToAccum || writeToDest)
+        {
+            reg = m_RegState.MapXmmZero();
+        }
+        if (writeToDest)
+        {
+            m_Assembler->movdqa(asmjit::x86::ptr(asmjit::x86::r14, VectorOffset(m_OpCode.vd)), reg);
+        }
+        if (writeToAccum)
+        {
+            m_Assembler->movdqa(asmjit::x86::ptr(asmjit::x86::r14, AccumOffset(AccumLocation::Low)), reg);
+        }
+    }
+    else
+    {
+        Cheat_r4300iOpcode(&RSPOp::Vector_VXOR, "RSPOp::Vector_VXOR", false);
+    }
 }
 
 void CRSPRecompilerOps::Vector_VNXOR(void)
@@ -1305,7 +1448,7 @@ void CRSPRecompilerOps::LoadVectorRegister(asmjit::x86::Xmm xmmReg, uint8_t vect
 {
     if (e < 8)
     {
-        m_Assembler->movdqa(xmmReg, asmjit::x86::ptr(asmjit::x86::r14, (uint32_t)((uint8_t *)&m_Vect[vectorReg].u64(0) - (uint8_t *)&m_Reg)));
+        m_Assembler->movdqa(xmmReg, asmjit::x86::ptr(asmjit::x86::r14, VectorOffset(vectorReg)));
         if (e > 1)
         {
             switch (e)
@@ -1339,7 +1482,7 @@ void CRSPRecompilerOps::LoadVectorRegister(asmjit::x86::Xmm xmmReg, uint8_t vect
     }
     else
     {
-        m_Assembler->movzx(asmjit::x86::eax, asmjit::x86::word_ptr(asmjit::x86::r14, (uint32_t)((uint8_t *)&m_Vect[vectorReg].s16(e) - (uint8_t *)&m_Reg)));
+        m_Assembler->movzx(asmjit::x86::eax, asmjit::x86::word_ptr(asmjit::x86::r14, (uint32_t)((uint8_t *)&m_Vect[vectorReg].se(0, e) - (uint8_t *)&m_Reg)));
         m_Assembler->movd(xmmReg, asmjit::x86::eax);
         m_Assembler->pshuflw(xmmReg, xmmReg, _MM_SHUFFLE(0, 0, 0, 0));
         m_Assembler->pshufd(xmmReg, xmmReg, _MM_SHUFFLE(0, 0, 0, 0));
@@ -1349,7 +1492,16 @@ void CRSPRecompilerOps::LoadVectorRegister(asmjit::x86::Xmm xmmReg, uint8_t vect
 bool CRSPRecompilerOps::WriteToVectorDest(uint32_t DestReg, uint32_t PC)
 {
     const RSPInstructions & instructions = m_CurrentBlock->GetInstructions();
-    for (size_t i = m_CurrentBlock->InstructionIndex(PC) + 1, n = instructions.size(); i < n; i++)
+    size_t start = m_CurrentBlock->InstructionIndex(PC);
+    if (start > 0)
+    {
+        const RSPInstruction & instruction = instructions[start - 1];
+        if (instruction.IsJump() || instruction.isBranch())
+        {
+            return true;
+        }
+    }
+    for (size_t i = start + 1, n = instructions.size(); i < n; i++)
     {
         const RSPInstruction & instruction = instructions[i];
         if (instruction.IsJump() || instruction.isBranch())
@@ -1372,10 +1524,6 @@ bool CRSPRecompilerOps::WriteToVectorDest(uint32_t DestReg, uint32_t PC)
         {
             return true;
         }
-        if (instruction.isMtCop2() && instruction.DestReg() == DestReg)
-        {
-            return false;
-        }
     }
     return true;
 }
@@ -1383,7 +1531,16 @@ bool CRSPRecompilerOps::WriteToVectorDest(uint32_t DestReg, uint32_t PC)
 bool CRSPRecompilerOps::WriteToAccum(AccumLocation Location, uint32_t PC)
 {
     const RSPInstructions & instructions = m_CurrentBlock->GetInstructions();
-    for (size_t i = m_CurrentBlock->InstructionIndex(PC) + 1, n = instructions.size(); i < n; i++)
+    size_t start = m_CurrentBlock->InstructionIndex(PC);
+    if (start > 0)
+    {
+        const RSPInstruction & instruction = instructions[start - 1];
+        if (instruction.IsJump() || instruction.isBranch())
+        {
+            return true;
+        }
+    }
+    for (size_t i = start + 1, n = instructions.size(); i < n; i++)
     {
         const RSPInstruction & instruction = instructions[i];
         if (instruction.IsJump() || instruction.isBranch())
@@ -1436,6 +1593,11 @@ bool CRSPRecompilerOps::WriteToAccum(AccumLocation Location, uint32_t PC)
         }
     }
     return true;
+}
+
+uint32_t CRSPRecompilerOps::GprOffset(uint8_t gpReg) const
+{
+    return (uint32_t)((uint8_t *)&m_GPR[gpReg] - (uint8_t *)&m_Reg);
 }
 
 uint32_t CRSPRecompilerOps::VectorOffset(uint8_t vectorReg) const
