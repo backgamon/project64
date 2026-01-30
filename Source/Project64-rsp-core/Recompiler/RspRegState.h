@@ -1,3 +1,5 @@
+#if defined(__amd64__) || defined(_M_X64)
+
 #pragma once
 #include <Project64-rsp-core/Recompiler/asmjit.h>
 #include <stdint.h>
@@ -24,8 +26,9 @@ public:
     void ResetRegProtection();
 
     asmjit::x86::Xmm MapXmmZero();
-    asmjit::x86::Xmm MapXmmReg(uint8_t vreg, uint8_t source);
+    asmjit::x86::Xmm MapXmmReg(uint8_t vreg, uint8_t source, bool loadSource = true);
     asmjit::x86::Xmm MapXmmTemp(bool loadReg, uint8_t vreg, uint8_t e = 0);
+    asmjit::x86::Xmm MapSpecificXmmTemp(uint8_t xmmIndex, bool loadReg, uint8_t vreg, uint8_t e = 0);
     asmjit::x86::Xmm VRegMapping(uint8_t vreg);
     void ProtectXmm(asmjit::x86::Xmm reg);
     void UnprotectXmm(asmjit::x86::Xmm reg);
@@ -39,6 +42,7 @@ public:
     void SetFlagZero(RspFlags flag);
     void SetFlagUnknown(RspFlags flag);
 
+    bool FreeXmmReg(uint32_t xmmIndex);
     void WriteBackRegisters();
 
 private:
@@ -64,3 +68,5 @@ private:
     uint32_t m_GprConstValue[32];
     bool m_FlagIsZero[static_cast<size_t>(RspFlags::MaxFlags)];
 };
+
+#endif

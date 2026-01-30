@@ -1,3 +1,5 @@
+#if defined(__amd64__) || defined(_M_X64)
+
 #include "RspRegState.h"
 #include "Recompiler/RspAssembler.h"
 #include "Recompiler/RspRecompilerOps-x64.h"
@@ -8,7 +10,7 @@ CRspRegState::CRspRegState(CRSPRecompilerOps & RecompilerOps) :
     m_RecompilerOps(RecompilerOps),
     m_Assembler(RecompilerOps.m_Assembler)
 {
-    for (int i = 0; i < 32; i++)
+    for (uint32_t i = 0; i < 32; i++)
     {
         m_GprIsConst[i] = false;
         m_GprConstValue[i] = 0;
@@ -16,20 +18,20 @@ CRspRegState::CRspRegState(CRSPRecompilerOps & RecompilerOps) :
     m_GprIsConst[0] = true;
     m_GprConstValue[0] = 0;
 
-    for (int i = 0; i < 6; i++)
+    for (uint32_t i = 0; i < 6; i++)
     {
         m_XmmState[i] = XmmState::Free;
     }
-    for (int i = 6; i < 16; i++)
+    for (uint32_t i = 6; i < 16; i++)
     {
         m_XmmState[i] = XmmState::Reserved;
     }
-    for (int i = 0; i < 16; i++)
+    for (uint32_t i = 0; i < 16; i++)
     {
         m_XmmRegMapped[i] = (uint8_t)~0;
         m_XmmProtected[i] = false;
     }
-    for (size_t i = 0; i < (size_t)RspFlags::MaxFlags; i++)
+    for (uint32_t i = 0; i < (uint32_t)RspFlags::MaxFlags; i++)
     {
         m_FlagIsZero[i] = false;
     }
@@ -41,7 +43,7 @@ CRspRegState::~CRspRegState()
 
 void CRspRegState::ResetRegProtection()
 {
-    for (int i = 0, n = sizeof(m_XmmState) / sizeof(m_XmmState[0]); i < n; i++)
+    for (uint32_t i = 0, n = sizeof(m_XmmState) / sizeof(m_XmmState[0]); i < n; i++)
     {
         m_XmmProtected[i] = false;
     }
@@ -49,7 +51,7 @@ void CRspRegState::ResetRegProtection()
 
 asmjit::x86::Xmm CRspRegState::MapXmmZero()
 {
-    for (int i = 0, n = sizeof(m_XmmState) / sizeof(m_XmmState[0]); i < n; i++)
+    for (uint32_t i = 0, n = sizeof(m_XmmState) / sizeof(m_XmmState[0]); i < n; i++)
     {
         if (m_XmmState[i] == XmmState::Zero && !m_XmmProtected[i])
         {
@@ -58,10 +60,15 @@ asmjit::x86::Xmm CRspRegState::MapXmmZero()
         }
     }
 
-    for (int i = 0, n = sizeof(m_XmmState) / sizeof(m_XmmState[0]); i < n; i++)
+    XmmState searchOrder[] = {XmmState::Free, XmmState::Temp};
+    for (XmmState state : searchOrder)
     {
-        if (m_XmmState[i] == XmmState::Free)
+        for (uint8_t i = 0, n = sizeof(m_XmmState) / sizeof(m_XmmState[0]); i < n; i++)
         {
+            if (m_XmmState[i] != state || m_XmmProtected[i])
+            {
+                continue;
+            }
             m_Assembler->comment(stdstr_f(" regcache: allocate xmm%d as zero", i).c_str());
             m_XmmState[i] = XmmState::Zero;
             m_XmmProtected[i] = true;
@@ -73,20 +80,24 @@ asmjit::x86::Xmm CRspRegState::MapXmmZero()
     return asmjit::x86::Xmm();
 }
 
-asmjit::x86::Xmm CRspRegState::MapXmmReg(uint8_t vreg, uint8_t source)
+asmjit::x86::Xmm CRspRegState::MapXmmReg(uint8_t vreg, uint8_t source, bool loadSource)
 {
     asmjit::x86::Xmm srcReg = VRegMapping(source);
-    if (srcReg.isValid())
+    if (loadSource && srcReg.isValid())
     {
+        if (vreg == source)
+        {
+            return srcReg;
+        }
         ProtectXmm(srcReg);
     }
-    for (int i = 0, n = sizeof(m_XmmState) / sizeof(m_XmmState[0]); i < n; i++)
+    for (uint32_t i = 0, n = sizeof(m_XmmState) / sizeof(m_XmmState[0]); i < n; i++)
     {
         if (m_XmmState[i] == XmmState::Mapped && m_XmmRegMapped[i] == vreg)
         {
-            if (source != vreg)
+            if (loadSource && source != vreg)
             {
-                asmjit::x86::Xmm srcReg = VRegMapping(source);
+                srcReg = VRegMapping(source);
                 if (srcReg.isValid())
                 {
                     m_Assembler->movdqa(asmjit::x86::Xmm(i), srcReg);
@@ -101,7 +112,7 @@ asmjit::x86::Xmm CRspRegState::MapXmmReg(uint8_t vreg, uint8_t source)
     }
 
     asmjit::x86::Xmm reg;
-    for (int i = 0, n = sizeof(m_XmmState) / sizeof(m_XmmState[0]); i < n; i++)
+    for (uint32_t i = 0, n = sizeof(m_XmmState) / sizeof(m_XmmState[0]); i < n; i++)
     {
         if (m_XmmState[i] != XmmState::Free)
         {
@@ -117,9 +128,9 @@ asmjit::x86::Xmm CRspRegState::MapXmmReg(uint8_t vreg, uint8_t source)
 
     if (!reg.isValid())
     {
-        for (int i = 0, n = sizeof(m_XmmState) / sizeof(m_XmmState[0]); i < n; i++)
+        for (uint32_t i = 0, n = sizeof(m_XmmState) / sizeof(m_XmmState[0]); i < n; i++)
         {
-            if (m_XmmState[i] != XmmState::Temp)
+            if (m_XmmState[i] != XmmState::Temp || m_XmmProtected[i])
             {
                 continue;
             }
@@ -132,7 +143,44 @@ asmjit::x86::Xmm CRspRegState::MapXmmReg(uint8_t vreg, uint8_t source)
         }
     }
 
-    if (reg.isValid())
+    if (!reg.isValid())
+    {
+        for (uint32_t i = 0, n = sizeof(m_XmmState) / sizeof(m_XmmState[0]); i < n; i++)
+        {
+            if (m_XmmState[i] != XmmState::Zero || m_XmmProtected[i])
+            {
+                continue;
+            }
+            m_Assembler->comment(stdstr_f(" regcache: allocate xmm%d to V%d", i, vreg).c_str());
+            m_XmmState[i] = XmmState::Mapped;
+            m_XmmRegMapped[i] = vreg;
+            m_XmmProtected[i] = true;
+            reg = asmjit::x86::Xmm(i);
+            break;
+        }
+    }
+
+    if (!reg.isValid())
+    {
+        for (uint32_t i = 0, n = sizeof(m_XmmState) / sizeof(m_XmmState[0]); i < n; i++)
+        {
+            if (m_XmmProtected[i])
+            {
+                continue;
+            }
+            if (!FreeXmmReg(i))
+            {
+                continue;
+            }
+            m_Assembler->comment(stdstr_f(" regcache: allocate xmm%d to V%d", i, vreg).c_str());
+            m_XmmState[i] = XmmState::Mapped;
+            m_XmmRegMapped[i] = vreg;
+            m_XmmProtected[i] = true;
+            reg = asmjit::x86::Xmm(i);
+            break;
+        }
+    }
+    if (loadSource && reg.isValid())
     {
         if (srcReg.isValid())
         {
@@ -142,6 +190,9 @@ asmjit::x86::Xmm CRspRegState::MapXmmReg(uint8_t vreg, uint8_t source)
         {
             m_Assembler->movdqa(reg, asmjit::x86::ptr(asmjit::x86::r14, m_RecompilerOps.VectorOffset(source)));
         }
+    }
+    if (reg.isValid())
+    {
         return reg;
     }
     g_Notify->BreakPoint(__FILE__, __LINE__);
@@ -150,7 +201,7 @@ asmjit::x86::Xmm CRspRegState::MapXmmReg(uint8_t vreg, uint8_t source)
 
 asmjit::x86::Xmm CRspRegState::VRegMapping(uint8_t vreg)
 {
-    for (int i = 0, n = sizeof(m_XmmState) / sizeof(m_XmmState[0]); i < n; i++)
+    for (uint32_t i = 0, n = sizeof(m_XmmState) / sizeof(m_XmmState[0]); i < n; i++)
     {
         if (m_XmmState[i] == XmmState::Mapped && m_XmmRegMapped[i] == vreg)
         {
@@ -190,58 +241,93 @@ void CRspRegState::UnprotectXmm(asmjit::x86::Xmm xmm)
 
 asmjit::x86::Xmm CRspRegState::MapXmmTemp(bool loadReg, uint8_t vreg, uint8_t e)
 {
-    asmjit::x86::Xmm tempReg;
-    for (int i = 0, n = sizeof(m_XmmState) / sizeof(m_XmmState[0]); i < n; i++)
+    XmmState searchOrder[] = {XmmState::Temp, XmmState::Free, XmmState::Zero, XmmState::Mapped};
+    for (XmmState state : searchOrder)
     {
-        if (m_XmmState[i] == XmmState::Temp && !m_XmmProtected[i])
+        for (uint8_t i = 0, n = sizeof(m_XmmState) / sizeof(m_XmmState[0]); i < n; i++)
         {
-            tempReg = asmjit::x86::Xmm(i);
-            m_XmmProtected[i] = true;
-            break;
+            if (m_XmmState[i] != state || m_XmmProtected[i])
+            {
+                continue;
+            }
+            return MapSpecificXmmTemp(i, loadReg, vreg, e);
         }
     }
 
-    if (!tempReg.isValid())
-    {
-        for (int i = 0, n = sizeof(m_XmmState) / sizeof(m_XmmState[0]); i < n; i++)
-        {
-            if (m_XmmState[i] == XmmState::Free)
-            {
-                tempReg = asmjit::x86::Xmm(i);
-                m_Assembler->comment(stdstr_f(" regcache: allocate xmm%d as temp register", i).c_str());
-                m_XmmState[i] = XmmState::Temp;
-                m_XmmProtected[i] = true;
-                break;
-            }
-        }
-    }
-    if (!tempReg.isValid())
-    {
-        for (int i = 0, n = sizeof(m_XmmState) / sizeof(m_XmmState[0]); i < n; i++)
-        {
-            if (m_XmmState[i] == XmmState::Zero && !m_XmmProtected[i])
-            {
-                tempReg = asmjit::x86::Xmm(i);
-                m_Assembler->comment(stdstr_f(" regcache: allocate xmm%d as temp register", i).c_str());
-                m_XmmState[i] = XmmState::Temp;
-                m_XmmProtected[i] = true;
-                break;
-            }
-        }
-    }
+    g_Notify->BreakPoint(__FILE__, __LINE__);
+    return asmjit::x86::Xmm();
+}
 
-    if (!tempReg.isValid())
+asmjit::x86::Xmm CRspRegState::MapSpecificXmmTemp(uint8_t xmmIndex, bool loadReg, uint8_t vreg, uint8_t e)
+{
+    if (xmmIndex >= 16 || m_XmmProtected[xmmIndex] || m_XmmState[xmmIndex] == XmmState::Reserved)
     {
         g_Notify->BreakPoint(__FILE__, __LINE__);
         return asmjit::x86::Xmm();
     }
 
-    if (loadReg)
+    if (m_XmmState[xmmIndex] == XmmState::Mapped || m_XmmState[xmmIndex] == XmmState::Zero)
+    {
+        if (!FreeXmmReg(xmmIndex))
+        {
+            g_Notify->BreakPoint(__FILE__, __LINE__);
+            return asmjit::x86::Xmm();
+        }
+    }
+    if (m_XmmState[xmmIndex] != XmmState::Temp)
+    {
+        m_Assembler->comment(stdstr_f(" regcache: allocate xmm%d as temp register", xmmIndex).c_str());
+    }
+    m_XmmState[xmmIndex] = XmmState::Temp;
+    m_XmmProtected[xmmIndex] = true;
+    asmjit::x86::Xmm tempReg = asmjit::x86::Xmm(xmmIndex);
+    if (loadReg && tempReg.isValid())
     {
         asmjit::x86::Xmm srcReg = VRegMapping(vreg);
         if (srcReg.isValid())
         {
-            g_Notify->BreakPoint(__FILE__, __LINE__);
+            m_Assembler->movdqa(tempReg, srcReg);
+            if (e >= 8)
+            {
+                uint8_t element = 7 - (e - 8);
+                if (element != 0)
+                {
+                    m_Assembler->psrldq(tempReg, element * 2); // Shift element to position 0
+                }
+                m_Assembler->pshuflw(tempReg, tempReg, _MM_SHUFFLE(0, 0, 0, 0));
+                m_Assembler->pshufd(tempReg, tempReg, _MM_SHUFFLE(0, 0, 0, 0));
+            }
+            else if (e > 1)
+            {
+                // Quarter/half modes
+                switch (e)
+                {
+                case 2: // 0q
+                    m_Assembler->pshuflw(tempReg, tempReg, _MM_SHUFFLE(3, 3, 1, 1));
+                    m_Assembler->pshufhw(tempReg, tempReg, _MM_SHUFFLE(3, 3, 1, 1));
+                    break;
+                case 3: // 1q
+                    m_Assembler->pshuflw(tempReg, tempReg, _MM_SHUFFLE(2, 2, 0, 0));
+                    m_Assembler->pshufhw(tempReg, tempReg, _MM_SHUFFLE(2, 2, 0, 0));
+                    break;
+                case 4: // 0h
+                    m_Assembler->pshuflw(tempReg, tempReg, _MM_SHUFFLE(3, 3, 3, 3));
+                    m_Assembler->pshufhw(tempReg, tempReg, _MM_SHUFFLE(3, 3, 3, 3));
+                    break;
+                case 5: // 1h
+                    m_Assembler->pshuflw(tempReg, tempReg, _MM_SHUFFLE(2, 2, 2, 2));
+                    m_Assembler->pshufhw(tempReg, tempReg, _MM_SHUFFLE(2, 2, 2, 2));
+                    break;
+                case 6: // 2h
+                    m_Assembler->pshuflw(tempReg, tempReg, _MM_SHUFFLE(1, 1, 1, 1));
+                    m_Assembler->pshufhw(tempReg, tempReg, _MM_SHUFFLE(1, 1, 1, 1));
+                    break;
+                case 7: // 3h
+                    m_Assembler->pshuflw(tempReg, tempReg, _MM_SHUFFLE(0, 0, 0, 0));
+                    m_Assembler->pshufhw(tempReg, tempReg, _MM_SHUFFLE(0, 0, 0, 0));
+                    break;
+                }
+            }
         }
         else
         {
@@ -296,9 +382,47 @@ void CRspRegState::SetFlagUnknown(RspFlags flag)
     m_FlagIsZero[(size_t)flag] = false;
 }
 
+bool CRspRegState::FreeXmmReg(uint32_t xmmIndex)
+{
+    if (xmmIndex >= sizeof(m_XmmState) / sizeof(m_XmmState[0]))
+    {
+        g_Notify->BreakPoint(__FILE__, __LINE__);
+        return false;
+    }
+    if (m_XmmProtected[xmmIndex])
+    {
+        g_Notify->BreakPoint(__FILE__, __LINE__);
+        return false;
+    }
+    if (m_XmmState[xmmIndex] == XmmState::Zero)
+    {
+        m_Assembler->comment(stdstr_f(" regcache: deallocate xmm%d as zero", xmmIndex).c_str());
+        m_XmmState[xmmIndex] = XmmState::Free;
+        return true;
+    }
+
+    if (m_XmmState[xmmIndex] == XmmState::Temp)
+    {
+        m_Assembler->comment(stdstr_f(" regcache: deallocate xmm%d as temp register", xmmIndex).c_str());
+        m_XmmState[xmmIndex] = XmmState::Free;
+        return true;
+    }
+
+    if (m_XmmState[xmmIndex] == XmmState::Mapped)
+    {
+        m_Assembler->comment(stdstr_f(" regcache: deallocate xmm%d from V%d", xmmIndex, m_XmmRegMapped[xmmIndex]).c_str());
+        m_Assembler->movdqa(asmjit::x86::ptr(asmjit::x86::r14, m_RecompilerOps.VectorOffset(m_XmmRegMapped[xmmIndex])), asmjit::x86::Xmm(xmmIndex));
+        m_XmmState[xmmIndex] = XmmState::Free;
+        m_XmmRegMapped[xmmIndex] = (uint8_t)~0;
+        return true;
+    }
+    g_Notify->BreakPoint(__FILE__, __LINE__);
+    return false;
+}
+
 void CRspRegState::WriteBackRegisters()
 {
-    for (int i = 0; i < 32; i++)
+    for (uint32_t i = 0; i < 32; i++)
     {
         m_GprIsConst[i] = false;
         m_GprConstValue[i] = 0;
@@ -306,32 +430,18 @@ void CRspRegState::WriteBackRegisters()
     m_GprIsConst[0] = true;
     m_GprConstValue[0] = 0;
 
-    for (size_t i = 0; i < (size_t)RspFlags::MaxFlags; i++)
+    for (uint32_t i = 0; i < (uint32_t)RspFlags::MaxFlags; i++)
     {
         m_FlagIsZero[i] = false;
     }
-    for (int i = 0, n = sizeof(m_XmmState) / sizeof(m_XmmState[0]); i < n; i++)
+    for (uint32_t i = 0, n = sizeof(m_XmmState) / sizeof(m_XmmState[0]); i < n; i++)
     {
-        if (m_XmmState[i] == XmmState::Zero)
+        if (m_XmmState[i] == XmmState::Free || m_XmmState[i] == XmmState::Reserved)
         {
-            m_Assembler->comment(stdstr_f(" regcache: deallocate xmm%d as zero", i).c_str());
-            m_XmmState[i] = XmmState::Free;
+            continue;
         }
-        else if (m_XmmState[i] == XmmState::Temp)
-        {
-            m_Assembler->comment(stdstr_f(" regcache: deallocate xmm%d as temp register", i).c_str());
-            m_XmmState[i] = XmmState::Free;
-        }
-        else if (m_XmmState[i] == XmmState::Mapped)
-        {
-            m_Assembler->comment(stdstr_f(" regcache: deallocate xmm%d from V%d", i, m_XmmRegMapped[i]).c_str());
-            m_Assembler->movdqa(asmjit::x86::ptr(asmjit::x86::r14, m_RecompilerOps.VectorOffset(m_XmmRegMapped[i])), asmjit::x86::Xmm(i));
-            m_XmmState[i] = XmmState::Free;
-            m_XmmRegMapped[i] = (uint8_t)~0;
-        }
-        else if (m_XmmState[i] != XmmState::Free && m_XmmState[i] != XmmState::Reserved)
-        {
-            g_Notify->BreakPoint(__FILE__, __LINE__);
-        }
+        FreeXmmReg(i);
     }
 }
+
+#endif
