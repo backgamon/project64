@@ -237,8 +237,21 @@ void CRSPRecompilerOps::BEQ(void)
                 {
                     g_Notify->BreakPoint(__FILE__, __LINE__);
                 }
-                m_RegState.WriteBackRegisters();
-                m_Assembler->JeLabel(stdstr_f("0x%X", Target).c_str(), Jump);
+                if (m_RegState.HasMappedRegisters())
+                {
+                    asmjit::Label JumpCave = m_Assembler->newLabel();
+                    m_Assembler->JeLabel(stdstr_f("0x%X_From_0x%X", Target, m_CompilePC).c_str(), JumpCave);
+                    m_Assembler->SetSecondarySection();
+                    m_Assembler->bind(JumpCave);
+                    CRspRegState CaveState = m_RegState;
+                    CaveState.WriteBackRegisters();
+                    m_Assembler->JmpLabel(stdstr_f("0x%X", Target).c_str(), Jump);
+                    m_Assembler->SetPrimarySection();
+                }
+                else
+                {
+                    m_Assembler->JeLabel(stdstr_f("0x%X", Target).c_str(), Jump);
+                }
             }
         }
         else
@@ -342,7 +355,21 @@ void CRSPRecompilerOps::BNE(void)
             asmjit::Label Jump;
             if (m_Recompiler.FindBranchJump(Target, Jump))
             {
-                m_Assembler->JneLabel(stdstr_f("0x%X", Target).c_str(), Jump);
+                if (m_RegState.HasMappedRegisters())
+                {
+                    asmjit::Label JumpCave = m_Assembler->newLabel();
+                    m_Assembler->JneLabel(stdstr_f("0x%X_From_0x%X", Target, m_CompilePC).c_str(), JumpCave);
+                    m_Assembler->SetSecondarySection();
+                    m_Assembler->bind(JumpCave);
+                    CRspRegState CaveState = m_RegState;
+                    CaveState.WriteBackRegisters();
+                    m_Assembler->JmpLabel(stdstr_f("0x%X", Target).c_str(), Jump);
+                    m_Assembler->SetPrimarySection();
+                }
+                else
+                {
+                    m_Assembler->JneLabel(stdstr_f("0x%X", Target).c_str(), Jump);
+                }
             }
             else
             {
@@ -432,14 +459,27 @@ void CRSPRecompilerOps::BLEZ(void)
         }
         if (!m_DelayAffectBranch)
         {
-            m_RegState.WriteBackRegisters();
             m_Assembler->CompConstToVariable(&m_GPR[m_OpCode.rs].W, GPR_Name(m_OpCode.rs), 0);
             asmjit::Label Jump;
             if (!m_Recompiler.FindBranchJump(Target, Jump))
             {
                 g_Notify->BreakPoint(__FILE__, __LINE__);
             }
-            m_Assembler->JleLabel(stdstr_f("0x%X", Target).c_str(), Jump);
+            if (m_RegState.HasMappedRegisters())
+            {
+                asmjit::Label JumpCave = m_Assembler->newLabel();
+                m_Assembler->JleLabel(stdstr_f("0x%X_From_0x%X", Target, m_CompilePC).c_str(), JumpCave);
+                m_Assembler->SetSecondarySection();
+                m_Assembler->bind(JumpCave);
+                CRspRegState CaveState = m_RegState;
+                CaveState.WriteBackRegisters();
+                m_Assembler->JmpLabel(stdstr_f("0x%X", Target).c_str(), Jump);
+                m_Assembler->SetPrimarySection();
+            }
+            else
+            {
+                m_Assembler->JleLabel(stdstr_f("0x%X", Target).c_str(), Jump);
+            }
         }
         else
         {
@@ -1074,9 +1114,11 @@ void CRSPRecompilerOps::Vector_VMULF(void)
     m_Assembler->movdqa(hi, vs);
     m_Assembler->pmulhw(hi, vte); // hi = vs * vte (high)
 
-    m_Assembler->movdqa(vs, lo);
-    m_Assembler->psrlw(vs, 15);    // vs = lo >> 15 (sign2)
-    m_Assembler->paddw(sign1, vs); // sign1 = sign1 + sign2 (total carry)
+    asmjit::x86::Xmm sign2 = m_RegState.MapXmmTemp(false, 0, 0);
+    m_Assembler->movdqa(sign2, lo);
+    m_Assembler->psrlw(sign2, 15);    // sign2 = lo >> 15
+    m_Assembler->paddw(sign1, sign2); // sign1 = sign1 + sign2 (total carry)
+    m_RegState.UnprotectXmm(sign2);
 
     m_Assembler->psllw(hi, 1); // hi *= 2
 
@@ -1089,23 +1131,24 @@ void CRSPRecompilerOps::Vector_VMULF(void)
     m_Assembler->movdqa(asmjit::x86::xmmword_ptr(asmjit::x86::r14, AccumOffset(AccumLocation::Middle)), hi);
 
     // Phase 4: Calculate ACCH and saturate
-    m_Assembler->movdqa(vs, hi);
-    m_Assembler->psraw(vs, 15); // neg = sign extend ACCM
+    asmjit::x86::Xmm neg = m_RegState.MapXmmTemp(false, 0, 0);
+    m_Assembler->movdqa(neg, hi);
+    m_Assembler->psraw(neg, 15); // neg = sign extend ACCM
 
-    // Reload original vs for comparison
-    m_Assembler->movdqa(lo, asmjit::x86::xmmword_ptr(asmjit::x86::r14, VectorOffset(m_OpCode.vs)));
-    m_Assembler->pcmpeqw(lo, vte); // neq = (vs == vte)
+    m_Assembler->pcmpeqw(vs, vte); // vs = (vs == vte)
 
-    m_Assembler->movdqa(round, lo); // round = neq
-    m_Assembler->pandn(round, vs);  // ACCH = ~neq & neg (FIXED!)
+    m_Assembler->movdqa(round, vs); // round = (vs == vte)
+    m_Assembler->pandn(round, neg); // ACCH = ~(vs==vte) & neg
     m_Assembler->movdqa(asmjit::x86::xmmword_ptr(asmjit::x86::r14, AccumOffset(AccumLocation::High)), round);
 
-    m_Assembler->pand(lo, vs);  // eq = neq & neg
-    m_Assembler->paddw(hi, lo); // vd = ACCM + eq
+    m_Assembler->pand(vs, neg); // vs = (vs==vte) & neg
+    m_Assembler->paddw(hi, vs); // vd = ACCM + ((vs==vte) & neg)
 
     // Store result
     m_RegState.UnprotectXmm(vte);
+    m_RegState.UnprotectXmm(vs);
     m_RegState.UnprotectXmm(sign1);
+    m_RegState.UnprotectXmm(neg);
     m_RegState.UnprotectXmm(round);
     m_RegState.UnprotectXmm(lo);
     asmjit::x86::Xmm vd = m_RegState.MapXmmReg(m_OpCode.vd, m_OpCode.vd, false);
