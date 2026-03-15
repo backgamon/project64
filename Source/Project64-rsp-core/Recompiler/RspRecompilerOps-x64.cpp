@@ -84,6 +84,7 @@ void CRSPRecompilerOps::J(void)
         if (m_CurrentBlock->IsEnd(m_CompilePC) && m_CurrentBlock->CodeType() == RspCodeType_TASK)
         {
             m_Assembler->MoveConstToVariable(m_System.m_SP_PC_REG, "RSP PC", Target);
+            m_RegState.WriteBackRegisters();
             ExitCodeBlock();
         }
         else if (m_Recompiler.FindBranchJump(Target, Jump))
@@ -1074,7 +1075,42 @@ void CRSPRecompilerOps::Cop2_CF(void)
 
 void CRSPRecompilerOps::Cop2_MT(void)
 {
-    Cheat_r4300iOpcode(&RSPOp::Cop2_MT, "RSPOp::Cop2_MT");
+    m_Assembler->comment(stdstr_f("%X %s", m_CompilePC, RSPInstruction(m_CompilePC, m_OpCode.Value).NameAndParam().c_str()).c_str());
+    asmjit::x86::Xmm vs = m_RegState.MapXmmReg(m_OpCode.vs, m_OpCode.vs, true);
+
+    uint8_t element = (uint8_t)(15 - (m_OpCode.sa >> 1));
+    if ((element & 1) != 0)
+    {
+        if (m_RegState.IsGprConst(m_OpCode.rt))
+        {
+            m_Assembler->mov(asmjit::x86::eax, m_RegState.GetGprConstValue(m_OpCode.rt) & 0xFFFF);
+            m_Assembler->pinsrw(vs, asmjit::x86::eax, element >> 1);
+        }
+        else
+        {
+            m_Assembler->mov(asmjit::x86::eax, asmjit::x86::dword_ptr(asmjit::x86::r14, GprOffset(m_OpCode.rt)));
+            m_Assembler->pinsrw(vs, asmjit::x86::eax, element >> 1);
+        }
+    }
+    else
+    {
+        if (m_RegState.IsGprConst(m_OpCode.rt))
+        {
+            uint32_t value = m_RegState.GetGprConstValue(m_OpCode.rt);
+            m_Assembler->mov(asmjit::x86::eax, (value >> 8) & 0xFF);
+            m_Assembler->pinsrb(vs, asmjit::x86::eax, element);
+            m_Assembler->mov(asmjit::x86::eax, value & 0xFF);
+            m_Assembler->pinsrb(vs, asmjit::x86::eax, element - 1);
+        }
+        else
+        {
+            m_Assembler->mov(asmjit::x86::eax, asmjit::x86::dword_ptr(asmjit::x86::r14, GprOffset(m_OpCode.rt)));
+            m_Assembler->mov(asmjit::x86::ecx, asmjit::x86::eax);
+            m_Assembler->shr(asmjit::x86::ecx, 8);
+            m_Assembler->pinsrb(vs, asmjit::x86::ecx, element);
+            m_Assembler->pinsrb(vs, asmjit::x86::eax, element - 1);
+        }
+    }
 }
 
 void CRSPRecompilerOps::Cop2_CT(void)
@@ -1719,7 +1755,58 @@ void CRSPRecompilerOps::Vector_VADD(void)
 
 void CRSPRecompilerOps::Vector_VSUB(void)
 {
-    Cheat_r4300iOpcode(&RSPOp::Vector_VSUB, "RSPOp::Vector_VSUB");
+    bool writeToDest = WriteToVectorDest(m_OpCode.vd, m_CompilePC);
+    bool writeToAccum = WriteToAccum(AccumLocation::Low, m_CompilePC);
+
+    m_Assembler->comment(stdstr_f("%X %s", m_CompilePC, RSPInstruction(m_CompilePC, m_OpCode.Value).NameAndParam().c_str()).c_str());
+    asmjit::x86::Xmm vs, vte, vcol;
+    if (writeToAccum || writeToDest)
+    {
+        vte = m_RegState.MapXmmTemp(true, m_OpCode.vt, m_OpCode.e);
+        vs = writeToDest ? m_RegState.MapXmmReg(m_OpCode.vd, m_OpCode.vs) : m_RegState.MapXmmTemp(true, m_OpCode.vs);
+        if (!m_RegState.IsFlagZero(RspFlags::VCOL))
+        {
+            vcol = m_RegState.MapXmmTemp(false, 0);
+            m_Assembler->movdqa(vcol, asmjit::x86::ptr(asmjit::x86::r14, FlagOffset(RspFlags::VCOL)));
+        }
+    }
+    if (writeToAccum)
+    {
+        asmjit::x86::Xmm accLo = m_RegState.MapXmmAccum(AccumLocation::Low, false);
+        m_Assembler->movdqa(accLo, vs);
+        m_Assembler->psubw(accLo, vte);
+        if (!m_RegState.IsFlagZero(RspFlags::VCOL))
+        {
+            m_Assembler->psubw(accLo, vcol);
+        }
+    }
+    if (writeToDest)
+    {
+        m_Assembler->psubsw(vs, vte);
+        if (!m_RegState.IsFlagZero(RspFlags::VCOL))
+        {
+            m_Assembler->psubsw(vs, vcol);
+        }
+    }
+    if (vcol.isValid())
+    {
+        m_RegState.UnprotectXmm(vcol);
+    }
+
+    if (!m_RegState.IsFlagZero(RspFlags::VCOL) || !m_RegState.IsFlagZero(RspFlags::VCOH))
+    {
+        asmjit::x86::Xmm zero = m_RegState.MapXmmZero();
+        if (!m_RegState.IsFlagZero(RspFlags::VCOL))
+        {
+            m_Assembler->movdqa(asmjit::x86::ptr(asmjit::x86::r14, FlagOffset(RspFlags::VCOL)), zero);
+            m_RegState.SetFlagZero(RspFlags::VCOL);
+        }
+        if (!m_RegState.IsFlagZero(RspFlags::VCOH))
+        {
+            m_Assembler->movdqa(asmjit::x86::ptr(asmjit::x86::r14, FlagOffset(RspFlags::VCOH)), zero);
+            m_RegState.SetFlagZero(RspFlags::VCOH);
+        }
+    }
 }
 
 void CRSPRecompilerOps::Vector_VABS(void)
@@ -2141,7 +2228,144 @@ void CRSPRecompilerOps::Opcode_SDV(void)
 
 void CRSPRecompilerOps::Opcode_SQV(void)
 {
-    Cheat_r4300iOpcode(&RSPOp::SQV, "RSPOp::SQV");
+    m_Assembler->comment(stdstr_f("%X %s", m_CompilePC, RSPInstruction(m_CompilePC, m_OpCode.Value).NameAndParam().c_str()).c_str());
+
+    if (m_RegState.IsGprConst(m_OpCode.base))
+    {
+        uint32_t Address = (m_RegState.GetGprConstValue(m_OpCode.base) + (m_OpCode.voffset << 4)) & 0xFFF;
+        uint8_t Length = (uint8_t)(((Address + 0x10) & ~0xF) - Address);
+
+        if (m_OpCode.del == 0 && Length == 16)
+        {
+            // Const aligned — single shuffled store
+            asmjit::x86::Xmm vt = m_RegState.MapXmmTemp(true, m_OpCode.vt, 0);
+            m_Assembler->pshufd(vt, vt, 0x1B);
+            m_Assembler->movdqu(asmjit::x86::ptr(asmjit::x86::r15, Address), vt);
+        }
+        else
+        {
+            asmjit::x86::Xmm vt = m_RegState.MapXmmTemp(true, m_OpCode.vt, 0);
+            for (uint8_t i = m_OpCode.del; i < (Length + m_OpCode.del); i++, Address++)
+            {
+                uint8_t vecByte = 15 - (i & 0xF);
+                uint32_t dmemAddr = (Address ^ 3) & 0xFFF;
+                m_Assembler->pextrb(asmjit::x86::byte_ptr(asmjit::x86::r15, dmemAddr), vt, vecByte);
+            };
+        }
+    }
+    else if (m_OpCode.del == 0)
+    {
+        // Runtime address, del==0 — check alignment at runtime
+        asmjit::x86::Xmm vt = m_RegState.MapXmmTemp(true, m_OpCode.vt, 0);
+
+        asmjit::x86::Gpd addr = asmjit::x86::eax;
+        m_Assembler->mov(addr, asmjit::x86::dword_ptr(asmjit::x86::r14, GprOffset(m_OpCode.base)));
+        if (m_OpCode.voffset != 0)
+        {
+            m_Assembler->add(addr, m_OpCode.voffset << 4);
+        }
+        m_Assembler->and_(addr, 0xFFF);
+
+        asmjit::Label unaligned = m_Assembler->newLabel();
+        asmjit::Label done = m_Assembler->newLabel();
+        m_Assembler->test(addr, 0xF);
+        m_Assembler->jnz(unaligned);
+
+        // Aligned fast path — shuffle + store
+        m_Assembler->pshufd(vt, vt, 0x1B);
+        m_Assembler->movdqu(asmjit::x86::ptr(asmjit::x86::r15, asmjit::x86::rax), vt);
+        m_Assembler->pshufd(vt, vt, 0x1B); // Restore original order
+
+        // Unaligned fallback — write back and loop
+        m_Assembler->SetSecondarySection();
+        m_Assembler->bind(unaligned);
+        m_Assembler->movdqa(asmjit::x86::ptr(asmjit::x86::r14, VectorOffset(m_OpCode.vt)), vt);
+
+        // ecx = Address, edx = end
+        m_Assembler->mov(asmjit::x86::ecx, addr);
+        m_Assembler->mov(asmjit::x86::edx, asmjit::x86::ecx);
+        m_Assembler->add(asmjit::x86::edx, 0x10);
+        m_Assembler->and_(asmjit::x86::edx, ~0xF);
+
+        m_Assembler->xor_(asmjit::x86::eax, asmjit::x86::eax); // i = 0
+
+        asmjit::Label loopStart = m_Assembler->newLabel();
+        asmjit::Label loopEnd = m_Assembler->newLabel();
+
+        m_Assembler->bind(loopStart);
+        m_Assembler->cmp(asmjit::x86::ecx, asmjit::x86::edx);
+        m_Assembler->jge(loopEnd);
+
+        m_Assembler->mov(asmjit::x86::r8d, asmjit::x86::eax);
+        m_Assembler->and_(asmjit::x86::r8d, 0xF);
+        m_Assembler->mov(asmjit::x86::r9d, 15);
+        m_Assembler->sub(asmjit::x86::r9d, asmjit::x86::r8d);
+
+        m_Assembler->mov(asmjit::x86::r8d, asmjit::x86::ecx);
+        m_Assembler->xor_(asmjit::x86::r8d, 3);
+        m_Assembler->and_(asmjit::x86::r8d, 0xFFF);
+
+        m_Assembler->lea(asmjit::x86::r10, asmjit::x86::ptr(asmjit::x86::r14, VectorOffset(m_OpCode.vt)));
+        m_Assembler->mov(asmjit::x86::r10b, asmjit::x86::byte_ptr(asmjit::x86::r10, asmjit::x86::r9));
+        m_Assembler->mov(asmjit::x86::byte_ptr(asmjit::x86::r15, asmjit::x86::r8), asmjit::x86::r10b);
+
+        m_Assembler->inc(asmjit::x86::ecx);
+        m_Assembler->inc(asmjit::x86::eax);
+        m_Assembler->jmp(loopStart);
+
+        m_Assembler->bind(loopEnd);
+        m_Assembler->jmp(done);
+        m_Assembler->SetPrimarySection();
+        m_Assembler->bind(done);
+    }
+    else
+    {
+        // Non-zero del, non-const base — loop fallback
+        asmjit::x86::Xmm vtReg = m_RegState.VRegMapping(m_OpCode.vt);
+        if (vtReg.isValid())
+        {
+            m_Assembler->movdqa(asmjit::x86::ptr(asmjit::x86::r14, VectorOffset(m_OpCode.vt)), vtReg);
+        }
+
+        m_Assembler->mov(asmjit::x86::ecx, asmjit::x86::dword_ptr(asmjit::x86::r14, GprOffset(m_OpCode.base)));
+        if (m_OpCode.voffset != 0)
+        {
+            m_Assembler->add(asmjit::x86::ecx, m_OpCode.voffset << 4);
+        }
+        m_Assembler->and_(asmjit::x86::ecx, 0xFFF);
+
+        m_Assembler->mov(asmjit::x86::edx, asmjit::x86::ecx);
+        m_Assembler->add(asmjit::x86::edx, 0x10);
+        m_Assembler->and_(asmjit::x86::edx, ~0xF);
+
+        m_Assembler->mov(asmjit::x86::eax, m_OpCode.del);
+
+        asmjit::Label loopStart = m_Assembler->newLabel();
+        asmjit::Label loopEnd = m_Assembler->newLabel();
+
+        m_Assembler->bind(loopStart);
+        m_Assembler->cmp(asmjit::x86::ecx, asmjit::x86::edx);
+        m_Assembler->jge(loopEnd);
+
+        m_Assembler->mov(asmjit::x86::r8d, asmjit::x86::eax);
+        m_Assembler->and_(asmjit::x86::r8d, 0xF);
+        m_Assembler->mov(asmjit::x86::r9d, 15);
+        m_Assembler->sub(asmjit::x86::r9d, asmjit::x86::r8d);
+
+        m_Assembler->mov(asmjit::x86::r8d, asmjit::x86::ecx);
+        m_Assembler->xor_(asmjit::x86::r8d, 3);
+        m_Assembler->and_(asmjit::x86::r8d, 0xFFF);
+
+        m_Assembler->lea(asmjit::x86::r10, asmjit::x86::ptr(asmjit::x86::r14, VectorOffset(m_OpCode.vt)));
+        m_Assembler->mov(asmjit::x86::r10b, asmjit::x86::byte_ptr(asmjit::x86::r10, asmjit::x86::r9));
+        m_Assembler->mov(asmjit::x86::byte_ptr(asmjit::x86::r15, asmjit::x86::r8), asmjit::x86::r10b);
+
+        m_Assembler->inc(asmjit::x86::ecx);
+        m_Assembler->inc(asmjit::x86::eax);
+        m_Assembler->jmp(loopStart);
+
+        m_Assembler->bind(loopEnd);
+    }
 }
 
 void CRSPRecompilerOps::Opcode_SRV(void)
@@ -2193,6 +2417,14 @@ void CRSPRecompilerOps::EnterCodeBlock(void)
     {
         m_Assembler->mov(asmjit::x86::rcx, asmjit::imm((uintptr_t)m_CompilePC));
         m_Assembler->CallFunc(AddressOf(&StartTimer), "StartTimer");
+    }
+    if (SyncCPU)
+    {
+        m_Assembler->MoveConstToVariable(m_System.m_SP_PC_REG, "RSP PC", m_CompilePC);
+        m_Assembler->mov(asmjit::x86::rdx, asmjit::imm(0x2000));
+        m_Assembler->mov(asmjit::x86::r8, asmjit::imm(m_CompilePC & 0xFFF));
+        m_Assembler->CallThis(RSPSystem.SyncSystem(), AddressOf(&CRSPSystem::ExecuteOps), "CRSPSystem::ExecuteOps");
+        m_Assembler->CallThis(&RSPSystem, AddressOf(&CRSPSystem::BasicSyncCheck), "CRSPSystem::BasicSyncCheck");
     }
 }
 
