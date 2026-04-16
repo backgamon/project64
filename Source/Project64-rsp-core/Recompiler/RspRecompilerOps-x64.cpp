@@ -738,7 +738,47 @@ void CRSPRecompilerOps::LBU(void)
 
 void CRSPRecompilerOps::LHU(void)
 {
-    Cheat_r4300iOpcode(&RSPOp::LHU, "RSPOp::LHU");
+    m_Assembler->comment(stdstr_f("%X %s", m_CompilePC, RSPInstruction(m_CompilePC, m_OpCode.Value).NameAndParam().c_str()).c_str());
+    if (m_OpCode.rt == 0)
+    {
+        return;
+    }
+
+    m_Assembler->mov(asmjit::x86::eax, asmjit::x86::dword_ptr(asmjit::x86::r14, GprOffset(m_OpCode.rs)));
+    if (m_OpCode.offset != 0)
+    {
+        m_Assembler->add(asmjit::x86::eax, (int16_t)m_OpCode.offset);
+    }
+    m_Assembler->and_(asmjit::x86::eax, 0xFFF);
+    m_Assembler->test(asmjit::x86::eax, 1);
+    asmjit::Label unaligned = m_Assembler->newLabel();
+    asmjit::Label done = m_Assembler->newLabel();
+
+    m_Assembler->jnz(unaligned);
+    // Aligned path
+    m_Assembler->xor_(asmjit::x86::eax, 2);
+    m_Assembler->movzx(asmjit::x86::eax, asmjit::x86::word_ptr(asmjit::x86::r15, asmjit::x86::rax));
+
+    // Unaligned path
+    m_Assembler->SetSecondarySection();
+    m_Assembler->bind(unaligned);
+    m_Assembler->mov(asmjit::x86::ecx, asmjit::x86::eax);
+    m_Assembler->xor_(asmjit::x86::ecx, 3);
+    m_Assembler->movzx(asmjit::x86::edx, asmjit::x86::byte_ptr(asmjit::x86::r15, asmjit::x86::rcx));
+    m_Assembler->shl(asmjit::x86::edx, 8);
+    m_Assembler->mov(asmjit::x86::ecx, asmjit::x86::eax);
+    m_Assembler->add(asmjit::x86::ecx, 1);
+    m_Assembler->and_(asmjit::x86::ecx, 0xFFF);
+    m_Assembler->xor_(asmjit::x86::ecx, 3);
+    m_Assembler->movzx(asmjit::x86::ecx, asmjit::x86::byte_ptr(asmjit::x86::r15, asmjit::x86::rcx));
+    m_Assembler->or_(asmjit::x86::edx, asmjit::x86::ecx);
+    m_Assembler->movzx(asmjit::x86::eax, asmjit::x86::dx);
+    m_Assembler->jmp(done);
+
+    m_Assembler->SetPrimarySection();
+    m_Assembler->bind(done);
+
+    m_Assembler->mov(asmjit::x86::dword_ptr(asmjit::x86::r14, GprOffset(m_OpCode.rt)), asmjit::x86::eax);
 }
 
 void CRSPRecompilerOps::LWU(void)
@@ -1448,7 +1488,63 @@ void CRSPRecompilerOps::Vector_VMUDN(void)
 
 void CRSPRecompilerOps::Vector_VMUDH(void)
 {
-    Cheat_r4300iOpcode(&RSPOp::Vector_VMUDH, "RSPOp::Vector_VMUDH");
+    m_Assembler->comment(stdstr_f("%X %s", m_CompilePC, RSPInstruction(m_CompilePC, m_OpCode.Value).NameAndParam().c_str()).c_str());
+
+    bool writeToAccum = WriteToAccum(AccumLocation::Entire, m_CompilePC);
+    bool writeToDest = WriteToVectorDest(m_OpCode.vd, m_CompilePC);
+
+    if (!writeToAccum && !writeToDest)
+    {
+        return;
+    }
+
+    asmjit::x86::Xmm vte = m_RegState.MapXmmTemp(true, m_OpCode.vt, m_OpCode.e);
+    asmjit::x86::Xmm vs = m_RegState.MapXmmTemp(true, m_OpCode.vs, 0);
+
+    if (writeToAccum)
+    {
+        asmjit::x86::Xmm accLo = m_RegState.MapXmmAccum(AccumLocation::Low, false);
+        m_Assembler->pxor(accLo, accLo);
+        asmjit::x86::Xmm accMid = m_RegState.MapXmmAccum(AccumLocation::Middle, false);
+        m_Assembler->movdqa(accMid, vs);
+        m_Assembler->pmullw(accMid, vte);
+        asmjit::x86::Xmm accHi = m_RegState.MapXmmAccum(AccumLocation::High, false);
+        m_Assembler->movdqa(accHi, vs);
+        m_Assembler->pmulhw(accHi, vte);
+
+        if (writeToDest)
+        {
+            m_RegState.UnprotectXmm(vte);
+            asmjit::x86::Xmm vd = m_RegState.MapXmmReg(m_OpCode.vd, m_OpCode.vd, false);
+
+            m_Assembler->movdqa(vs, accMid);
+            m_Assembler->punpcklwd(vs, accHi);
+            m_Assembler->punpckhwd(accMid, accHi);
+            m_Assembler->packssdw(vs, accMid);
+            m_Assembler->movdqa(vd, vs);
+        }
+    }
+    else
+    {
+        asmjit::x86::Xmm lo = m_RegState.MapXmmTemp(false, 0, 0);
+        asmjit::x86::Xmm hi = m_RegState.MapXmmTemp(false, 0, 0);
+
+        m_Assembler->movdqa(lo, vs);
+        m_Assembler->pmullw(lo, vte);
+        m_Assembler->movdqa(hi, vs);
+        m_Assembler->pmulhw(hi, vte);
+
+        m_RegState.UnprotectXmm(vte);
+        m_RegState.UnprotectXmm(vs);
+        asmjit::x86::Xmm vd = m_RegState.MapXmmReg(m_OpCode.vd, m_OpCode.vd, false);
+
+        m_Assembler->movdqa(vs, lo);
+        m_Assembler->punpcklwd(vs, hi);
+        m_Assembler->punpckhwd(lo, hi);
+        m_Assembler->packssdw(vs, lo);
+        m_Assembler->movdqa(vd, vs);
+        m_RegState.UnprotectXmm(hi);
+    }
 }
 
 void CRSPRecompilerOps::Vector_VMACF(void)
@@ -1889,7 +1985,30 @@ void CRSPRecompilerOps::Vector_VSUBC(void)
 
 void CRSPRecompilerOps::Vector_VSAW(void)
 {
-    Cheat_r4300iOpcode(&RSPOp::Vector_VSAW, "RSPOp::Vector_VSAW");
+    m_Assembler->comment(stdstr_f("%X %s", m_CompilePC, RSPInstruction(m_CompilePC, m_OpCode.Value).NameAndParam().c_str()).c_str());
+
+    bool writeToDest = WriteToVectorDest(m_OpCode.vd, m_CompilePC);
+    if (!writeToDest)
+    {
+        return;
+    }
+
+    asmjit::x86::Xmm vd = m_RegState.MapXmmReg(m_OpCode.vd, m_OpCode.vd, false);
+    switch ((m_OpCode.rs & 0xF))
+    {
+    case 8:
+        m_Assembler->movdqa(vd, m_RegState.MapXmmAccum(AccumLocation::High, true));
+        break;
+    case 9:
+        m_Assembler->movdqa(vd, m_RegState.MapXmmAccum(AccumLocation::Middle, true));
+        break;
+    case 10:
+        m_Assembler->movdqa(vd, m_RegState.MapXmmAccum(AccumLocation::Low, true));
+        break;
+    default:
+        m_Assembler->pxor(vd, vd);
+        break;
+    }
 }
 
 void CRSPRecompilerOps::Vector_VLT(void)
@@ -2064,7 +2183,95 @@ void CRSPRecompilerOps::Opcode_LBV(void)
 
 void CRSPRecompilerOps::Opcode_LSV(void)
 {
-    Cheat_r4300iOpcode(&RSPOp::LSV, "RSPOp::LSV");
+    m_Assembler->comment(stdstr_f("%X %s", m_CompilePC, RSPInstruction(m_CompilePC, m_OpCode.Value).NameAndParam().c_str()).c_str());
+
+    uint8_t Length = std::min((uint8_t)2, (uint8_t)(16 - m_OpCode.del));
+    asmjit::x86::Xmm vt = m_RegState.MapXmmReg(m_OpCode.vt, m_OpCode.vt, true);
+
+    if (m_RegState.IsGprConst(m_OpCode.base))
+    {
+        uint32_t Address = (m_RegState.GetGprConstValue(m_OpCode.base) + (m_OpCode.voffset << 1)) & 0xFFF;
+
+        if (Length == 2 && (m_OpCode.del & 1) == 0)
+        {
+            uint32_t addr0 = (Address ^ 3) & 0xFFF;
+            uint32_t addr1 = ((Address + 1) ^ 3) & 0xFFF;
+            m_Assembler->movzx(asmjit::x86::eax, asmjit::x86::byte_ptr(asmjit::x86::r15, addr0));
+            m_Assembler->shl(asmjit::x86::eax, 8);
+            m_Assembler->movzx(asmjit::x86::ecx, asmjit::x86::byte_ptr(asmjit::x86::r15, addr1));
+            m_Assembler->or_(asmjit::x86::eax, asmjit::x86::ecx);
+            m_Assembler->pinsrw(vt, asmjit::x86::eax, (15 - m_OpCode.del) >> 1);
+        }
+        else
+        {
+            m_Assembler->movdqa(asmjit::x86::ptr(asmjit::x86::r14, VectorOffset(m_OpCode.vt)), vt);
+            for (uint8_t i = m_OpCode.del; i < Length + m_OpCode.del; i++, Address++)
+            {
+                uint32_t dmemAddr = (Address ^ 3) & 0xFFF;
+                m_Assembler->movzx(asmjit::x86::eax, asmjit::x86::byte_ptr(asmjit::x86::r15, dmemAddr));
+                m_Assembler->mov(asmjit::x86::byte_ptr(asmjit::x86::r14, VectorOffset(m_OpCode.vt) + (15 - i)), asmjit::x86::al);
+            }
+            m_Assembler->movdqa(vt, asmjit::x86::ptr(asmjit::x86::r14, VectorOffset(m_OpCode.vt)));
+        }
+    }
+    else
+    {
+        m_Assembler->mov(asmjit::x86::eax, asmjit::x86::dword_ptr(asmjit::x86::r14, GprOffset(m_OpCode.base)));
+        if (m_OpCode.voffset != 0)
+        {
+            m_Assembler->add(asmjit::x86::eax, m_OpCode.voffset << 1);
+        }
+        m_Assembler->and_(asmjit::x86::eax, 0xFFF);
+
+        if (Length == 2 && (m_OpCode.del & 1) == 0)
+        {
+            m_Assembler->mov(asmjit::x86::ecx, asmjit::x86::eax);
+            m_Assembler->xor_(asmjit::x86::ecx, 3);
+            m_Assembler->and_(asmjit::x86::ecx, 0xFFF);
+            m_Assembler->movzx(asmjit::x86::edx, asmjit::x86::byte_ptr(asmjit::x86::r15, asmjit::x86::rcx));
+            m_Assembler->shl(asmjit::x86::edx, 8);
+
+            m_Assembler->add(asmjit::x86::eax, 1);
+            m_Assembler->and_(asmjit::x86::eax, 0xFFF);
+            m_Assembler->xor_(asmjit::x86::eax, 3);
+            m_Assembler->movzx(asmjit::x86::eax, asmjit::x86::byte_ptr(asmjit::x86::r15, asmjit::x86::rax));
+            m_Assembler->or_(asmjit::x86::edx, asmjit::x86::eax);
+
+            m_Assembler->pinsrw(vt, asmjit::x86::edx, (15 - m_OpCode.del) >> 1);
+        }
+        else
+        {
+            m_Assembler->movdqa(asmjit::x86::ptr(asmjit::x86::r14, VectorOffset(m_OpCode.vt)), vt);
+
+            m_Assembler->mov(asmjit::x86::ecx, m_OpCode.del);
+            m_Assembler->mov(asmjit::x86::edx, m_OpCode.del + Length);
+
+            asmjit::Label loopStart = m_Assembler->newLabel();
+            asmjit::Label loopEnd = m_Assembler->newLabel();
+
+            m_Assembler->bind(loopStart);
+            m_Assembler->cmp(asmjit::x86::ecx, asmjit::x86::edx);
+            m_Assembler->jge(loopEnd);
+
+            m_Assembler->mov(asmjit::x86::r8d, asmjit::x86::eax);
+            m_Assembler->xor_(asmjit::x86::r8d, 3);
+            m_Assembler->and_(asmjit::x86::r8d, 0xFFF);
+            m_Assembler->mov(asmjit::x86::r9d, 15);
+            m_Assembler->sub(asmjit::x86::r9d, asmjit::x86::ecx);
+
+            m_Assembler->movzx(asmjit::x86::r8d, asmjit::x86::byte_ptr(asmjit::x86::r15, asmjit::x86::r8));
+            m_Assembler->lea(asmjit::x86::r10, asmjit::x86::ptr(asmjit::x86::r14, VectorOffset(m_OpCode.vt)));
+            m_Assembler->mov(asmjit::x86::byte_ptr(asmjit::x86::r10, asmjit::x86::r9), asmjit::x86::r8b);
+
+            m_Assembler->inc(asmjit::x86::eax);
+            m_Assembler->and_(asmjit::x86::eax, 0xFFF);
+            m_Assembler->inc(asmjit::x86::ecx);
+            m_Assembler->jmp(loopStart);
+
+            m_Assembler->bind(loopEnd);
+            m_Assembler->movdqa(vt, asmjit::x86::ptr(asmjit::x86::r14, VectorOffset(m_OpCode.vt)));
+        }
+    }
 }
 
 void CRSPRecompilerOps::Opcode_LLV(void)
@@ -2075,81 +2282,116 @@ void CRSPRecompilerOps::Opcode_LLV(void)
 void CRSPRecompilerOps::Opcode_LDV(void)
 {
     m_Assembler->comment(stdstr_f("%X %s", m_CompilePC, RSPInstruction(m_CompilePC, m_OpCode.Value).NameAndParam().c_str()).c_str());
-    if ((m_OpCode.del & 0x3) != 0)
-    {
-        Cheat_r4300iOpcode(&RSPOp::LDV, "RSPOp::LDV", false);
-        return;
-    }
-    if (m_RegState.IsGprConst(m_OpCode.base))
-    {
-        Cheat_r4300iOpcode(&RSPOp::LDV, "RSPOp::LDV", false);
-        return;
-    }
+
     uint8_t Length = std::min((uint8_t)8, (uint8_t)(16 - m_OpCode.del));
-    if (Length != 8)
+    if (Length == 0)
     {
-        Cheat_r4300iOpcode(&RSPOp::LDV, "RSPOp::LDV", false);
         return;
     }
-    asmjit::x86::Xmm vt = m_RegState.MapXmmReg(m_OpCode.vt, m_OpCode.vt);
+
+    asmjit::x86::Xmm vt = m_RegState.MapXmmReg(m_OpCode.vt, m_OpCode.vt, true);
+
+    if (m_RegState.IsGprConst(m_OpCode.base) && (m_OpCode.del & 0x3) == 0 && Length == 8)
+    {
+        uint32_t Address = (m_RegState.GetGprConstValue(m_OpCode.base) + (m_OpCode.voffset << 3)) & 0xFFF;
+
+        if ((Address & 7) == 0)
+        {
+            m_Assembler->mov(asmjit::x86::ecx, asmjit::x86::dword_ptr(asmjit::x86::r15, Address));
+            m_Assembler->mov(asmjit::x86::edx, asmjit::x86::dword_ptr(asmjit::x86::r15, Address + 4));
+            m_Assembler->shl(asmjit::x86::rcx, 32);
+            m_Assembler->or_(asmjit::x86::rcx, asmjit::x86::rdx);
+            m_Assembler->pinsrq(vt, asmjit::x86::rcx, m_OpCode.del == 0 ? 1 : 0);
+            return;
+        }
+    }
+
+    if ((m_OpCode.del & 0x3) != 0 || Length != 8)
+    {
+        // Odd del or partial — write back, byte copy, reload
+        m_Assembler->movdqa(asmjit::x86::ptr(asmjit::x86::r14, VectorOffset(m_OpCode.vt)), vt);
+
+        m_Assembler->mov(asmjit::x86::eax, asmjit::x86::dword_ptr(asmjit::x86::r14, GprOffset(m_OpCode.base)));
+        if (m_OpCode.voffset != 0)
+        {
+            m_Assembler->add(asmjit::x86::eax, m_OpCode.voffset << 3);
+        }
+        m_Assembler->and_(asmjit::x86::eax, 0xFFF);
+
+        m_Assembler->mov(asmjit::x86::ecx, m_OpCode.del);
+        m_Assembler->mov(asmjit::x86::edx, m_OpCode.del + Length);
+
+        asmjit::Label loopStart = m_Assembler->newLabel();
+        asmjit::Label loopEnd = m_Assembler->newLabel();
+        m_Assembler->bind(loopStart);
+        m_Assembler->cmp(asmjit::x86::ecx, asmjit::x86::edx);
+        m_Assembler->jge(loopEnd);
+
+        m_Assembler->mov(asmjit::x86::r8d, asmjit::x86::eax);
+        m_Assembler->xor_(asmjit::x86::r8d, 3);
+        m_Assembler->and_(asmjit::x86::r8d, 0xFFF);
+        m_Assembler->mov(asmjit::x86::r9d, 15);
+        m_Assembler->sub(asmjit::x86::r9d, asmjit::x86::ecx);
+        m_Assembler->movzx(asmjit::x86::r8d, asmjit::x86::byte_ptr(asmjit::x86::r15, asmjit::x86::r8));
+        m_Assembler->lea(asmjit::x86::r10, asmjit::x86::ptr(asmjit::x86::r14, VectorOffset(m_OpCode.vt)));
+        m_Assembler->mov(asmjit::x86::byte_ptr(asmjit::x86::r10, asmjit::x86::r9), asmjit::x86::r8b);
+
+        m_Assembler->inc(asmjit::x86::eax);
+        m_Assembler->inc(asmjit::x86::ecx);
+        m_Assembler->jmp(loopStart);
+        m_Assembler->bind(loopEnd);
+
+        m_Assembler->movdqa(vt, asmjit::x86::ptr(asmjit::x86::r14, VectorOffset(m_OpCode.vt)));
+        return;
+    }
+
     m_Assembler->mov(asmjit::x86::eax, asmjit::x86::dword_ptr(asmjit::x86::r14, GprOffset(m_OpCode.base)));
     if (m_OpCode.voffset != 0)
     {
         m_Assembler->add(asmjit::x86::eax, m_OpCode.voffset << 3);
     }
     m_Assembler->and_(asmjit::x86::eax, 0xFFF);
+
+    asmjit::Label unaligned = m_Assembler->newLabel();
+    asmjit::Label done = m_Assembler->newLabel();
     m_Assembler->test(asmjit::x86::eax, 7);
-    asmjit::Label Unaligned = m_Assembler->newLabel();
-    asmjit::Label LoadDoneLabel = m_Assembler->newLabel();
-    m_Assembler->jnz(Unaligned);
+    m_Assembler->jnz(unaligned);
+
     m_Assembler->mov(asmjit::x86::ecx, asmjit::x86::dword_ptr(asmjit::x86::r15, asmjit::x86::rax));
     m_Assembler->mov(asmjit::x86::edx, asmjit::x86::dword_ptr(asmjit::x86::r15, asmjit::x86::rax, 0, 4));
     m_Assembler->SetSecondarySection();
-    m_Assembler->bind(Unaligned);
-
-    // rcx will hold the result, edi is counter
+    m_Assembler->bind(unaligned);
     m_Assembler->xor_(asmjit::x86::rcx, asmjit::x86::rcx);
-    m_Assembler->xor_(asmjit::x86::edi, asmjit::x86::edi); // Start from 0
+    m_Assembler->xor_(asmjit::x86::r10d, asmjit::x86::r10d);
 
-    asmjit::Label LoopStart = m_Assembler->newLabel();
-    m_Assembler->bind(LoopStart);
-
-    // Shift previous bytes left (except first iteration)
-    m_Assembler->test(asmjit::x86::edi, asmjit::x86::edi);
-    asmjit::Label SkipShift = m_Assembler->newLabel();
-    m_Assembler->jz(SkipShift);
+    asmjit::Label loopStart = m_Assembler->newLabel();
+    asmjit::Label skipShift = m_Assembler->newLabel();
+    m_Assembler->bind(loopStart);
+    m_Assembler->test(asmjit::x86::r10d, asmjit::x86::r10d);
+    m_Assembler->jz(skipShift);
     m_Assembler->shl(asmjit::x86::rcx, 8);
-    m_Assembler->bind(SkipShift);
+    m_Assembler->bind(skipShift);
 
-    // Load byte at (Address + edi) ^ 3
-    m_Assembler->mov(asmjit::x86::esi, asmjit::x86::eax);
-    m_Assembler->add(asmjit::x86::esi, asmjit::x86::edi);
-    m_Assembler->and_(asmjit::x86::esi, 0xFFF);
-    m_Assembler->xor_(asmjit::x86::esi, 3);
-    m_Assembler->movzx(asmjit::x86::esi, asmjit::x86::byte_ptr(asmjit::x86::r15, asmjit::x86::rsi));
-    m_Assembler->or_(asmjit::x86::rcx, asmjit::x86::rsi);
+    m_Assembler->mov(asmjit::x86::r11d, asmjit::x86::eax);
+    m_Assembler->add(asmjit::x86::r11d, asmjit::x86::r10d);
+    m_Assembler->and_(asmjit::x86::r11d, 0xFFF);
+    m_Assembler->xor_(asmjit::x86::r11d, 3);
+    m_Assembler->movzx(asmjit::x86::r11d, asmjit::x86::byte_ptr(asmjit::x86::r15, asmjit::x86::r11));
+    m_Assembler->or_(asmjit::x86::rcx, asmjit::x86::r11);
 
-    // Increment and loop
-    m_Assembler->inc(asmjit::x86::edi);
-    m_Assembler->cmp(asmjit::x86::edi, Length);
-    m_Assembler->jl(LoopStart); // Loop while edi < Length
+    m_Assembler->inc(asmjit::x86::r10d);
+    m_Assembler->cmp(asmjit::x86::r10d, Length);
+    m_Assembler->jl(loopStart);
 
     m_Assembler->mov(asmjit::x86::rdx, asmjit::x86::rcx);
     m_Assembler->xor_(asmjit::x86::rcx, asmjit::x86::rcx);
-
-    m_Assembler->jmp(LoadDoneLabel);
+    m_Assembler->jmp(done);
     m_Assembler->SetPrimarySection();
-    m_Assembler->bind(LoadDoneLabel);
+    m_Assembler->bind(done);
+
     m_Assembler->shl(asmjit::x86::rcx, 32);
     m_Assembler->or_(asmjit::x86::rcx, asmjit::x86::rdx);
-    if (m_OpCode.del == 0)
-    {
-        m_Assembler->pinsrq(vt, asmjit::x86::ecx, 1);
-    }
-    else
-    {
-        m_Assembler->pinsrq(vt, asmjit::x86::ecx, 0);
-    }
+    m_Assembler->pinsrq(vt, asmjit::x86::rcx, m_OpCode.del == 0 ? 1 : 0);
 }
 
 void CRSPRecompilerOps::Opcode_LQV(void)
@@ -2206,7 +2448,111 @@ void CRSPRecompilerOps::Opcode_LQV(void)
 
 void CRSPRecompilerOps::Opcode_LRV(void)
 {
-    Cheat_r4300iOpcode(&RSPOp::LRV, "RSPOp::LRV");
+    m_Assembler->comment(stdstr_f("%X %s", m_CompilePC, RSPInstruction(m_CompilePC, m_OpCode.Value).NameAndParam().c_str()).c_str());
+
+    asmjit::x86::Xmm vt = m_RegState.MapXmmReg(m_OpCode.vt, m_OpCode.vt, true);
+
+    if (m_RegState.IsGprConst(m_OpCode.base))
+    {
+        uint32_t Address = (m_RegState.GetGprConstValue(m_OpCode.base) + (m_OpCode.voffset << 4)) & 0xFFF;
+        uint8_t Offset = (uint8_t)((0x10 - (Address & 0xF)) + m_OpCode.del);
+        Address &= 0xFF0;
+
+        if (Offset >= 16)
+        {
+            return;
+        }
+
+        m_Assembler->movdqa(asmjit::x86::ptr(asmjit::x86::r14, VectorOffset(m_OpCode.vt)), vt);
+        for (uint8_t i = Offset; i < 16; i++, Address++)
+        {
+            uint32_t dmemAddr = (Address ^ 3) & 0xFFF;
+            m_Assembler->movzx(asmjit::x86::eax, asmjit::x86::byte_ptr(asmjit::x86::r15, dmemAddr));
+            m_Assembler->mov(asmjit::x86::byte_ptr(asmjit::x86::r14, VectorOffset(m_OpCode.vt) + (15 - i)), asmjit::x86::al);
+        }
+        m_Assembler->movdqa(vt, asmjit::x86::ptr(asmjit::x86::r14, VectorOffset(m_OpCode.vt)));
+    }
+    else
+    {
+        m_Assembler->mov(asmjit::x86::eax, asmjit::x86::dword_ptr(asmjit::x86::r14, GprOffset(m_OpCode.base)));
+        if (m_OpCode.voffset != 0)
+        {
+            m_Assembler->add(asmjit::x86::eax, m_OpCode.voffset << 4);
+        }
+        m_Assembler->and_(asmjit::x86::eax, 0xFFF);
+
+        if (m_OpCode.del == 0)
+        {
+            asmjit::Label notAligned = m_Assembler->newLabel();
+            asmjit::Label done = m_Assembler->newLabel();
+
+            m_Assembler->test(asmjit::x86::eax, 0xF);
+            m_Assembler->jz(done);
+
+            m_Assembler->mov(asmjit::x86::ecx, asmjit::x86::eax);
+            m_Assembler->and_(asmjit::x86::ecx, 0xF);
+            m_Assembler->mov(asmjit::x86::edx, 0x10);
+            m_Assembler->sub(asmjit::x86::edx, asmjit::x86::ecx);
+            m_Assembler->and_(asmjit::x86::eax, 0xFF0);
+            m_Assembler->movdqa(asmjit::x86::ptr(asmjit::x86::r14, VectorOffset(m_OpCode.vt)), vt);
+            asmjit::Label loopStart = m_Assembler->newLabel();
+            m_Assembler->bind(loopStart);
+            m_Assembler->cmp(asmjit::x86::edx, 16);
+            m_Assembler->jge(notAligned);
+            m_Assembler->mov(asmjit::x86::r8d, asmjit::x86::eax);
+            m_Assembler->xor_(asmjit::x86::r8d, 3);
+            m_Assembler->and_(asmjit::x86::r8d, 0xFFF);
+            m_Assembler->mov(asmjit::x86::r9d, 15);
+            m_Assembler->sub(asmjit::x86::r9d, asmjit::x86::edx);
+            m_Assembler->movzx(asmjit::x86::r8d, asmjit::x86::byte_ptr(asmjit::x86::r15, asmjit::x86::r8));
+            m_Assembler->lea(asmjit::x86::r10, asmjit::x86::ptr(asmjit::x86::r14, VectorOffset(m_OpCode.vt)));
+            m_Assembler->mov(asmjit::x86::byte_ptr(asmjit::x86::r10, asmjit::x86::r9), asmjit::x86::r8b);
+
+            m_Assembler->inc(asmjit::x86::eax);
+            m_Assembler->inc(asmjit::x86::edx);
+            m_Assembler->jmp(loopStart);
+
+            m_Assembler->bind(notAligned);
+            m_Assembler->movdqa(vt, asmjit::x86::ptr(asmjit::x86::r14, VectorOffset(m_OpCode.vt)));
+
+            m_Assembler->bind(done);
+        }
+        else
+        {
+            m_Assembler->mov(asmjit::x86::ecx, asmjit::x86::eax);
+            m_Assembler->and_(asmjit::x86::ecx, 0xF);
+            m_Assembler->mov(asmjit::x86::edx, 0x10);
+            m_Assembler->sub(asmjit::x86::edx, asmjit::x86::ecx);
+            m_Assembler->add(asmjit::x86::edx, m_OpCode.del);
+            m_Assembler->and_(asmjit::x86::eax, 0xFF0);
+
+            m_Assembler->movdqa(asmjit::x86::ptr(asmjit::x86::r14, VectorOffset(m_OpCode.vt)), vt);
+
+            asmjit::Label loopStart = m_Assembler->newLabel();
+            asmjit::Label loopEnd = m_Assembler->newLabel();
+            m_Assembler->bind(loopStart);
+            m_Assembler->cmp(asmjit::x86::edx, 16);
+            m_Assembler->jge(loopEnd);
+
+            m_Assembler->mov(asmjit::x86::r8d, asmjit::x86::eax);
+            m_Assembler->xor_(asmjit::x86::r8d, 3);
+            m_Assembler->and_(asmjit::x86::r8d, 0xFFF);
+
+            m_Assembler->mov(asmjit::x86::r9d, 15);
+            m_Assembler->sub(asmjit::x86::r9d, asmjit::x86::edx);
+
+            m_Assembler->movzx(asmjit::x86::r8d, asmjit::x86::byte_ptr(asmjit::x86::r15, asmjit::x86::r8));
+            m_Assembler->lea(asmjit::x86::r10, asmjit::x86::ptr(asmjit::x86::r14, VectorOffset(m_OpCode.vt)));
+            m_Assembler->mov(asmjit::x86::byte_ptr(asmjit::x86::r10, asmjit::x86::r9), asmjit::x86::r8b);
+
+            m_Assembler->inc(asmjit::x86::eax);
+            m_Assembler->inc(asmjit::x86::edx);
+            m_Assembler->jmp(loopStart);
+
+            m_Assembler->bind(loopEnd);
+            m_Assembler->movdqa(vt, asmjit::x86::ptr(asmjit::x86::r14, VectorOffset(m_OpCode.vt)));
+        }
+    }
 }
 
 void CRSPRecompilerOps::Opcode_LPV(void)
@@ -2286,7 +2632,127 @@ void CRSPRecompilerOps::Opcode_SLV(void)
 
 void CRSPRecompilerOps::Opcode_SDV(void)
 {
-    Cheat_r4300iOpcode(&RSPOp::SDV, "RSPOp::SDV");
+    m_Assembler->comment(stdstr_f("%X %s", m_CompilePC, RSPInstruction(m_CompilePC, m_OpCode.Value).NameAndParam().c_str()).c_str());
+
+    if (m_RegState.IsGprConst(m_OpCode.base))
+    {
+        uint32_t Address = (m_RegState.GetGprConstValue(m_OpCode.base) + (m_OpCode.voffset << 3)) & 0xFFF;
+
+        if (m_OpCode.del == 0 && (Address & 7) == 0)
+        {
+            asmjit::x86::Xmm vt = m_RegState.MapXmmTemp(true, m_OpCode.vt, 0);
+            m_Assembler->pshufd(vt, vt, 0x1B);
+            m_Assembler->movq(asmjit::x86::ptr(asmjit::x86::r15, Address), vt);
+        }
+        else
+        {
+            asmjit::x86::Xmm vt = m_RegState.MapXmmTemp(true, m_OpCode.vt, 0);
+            for (uint8_t i = m_OpCode.del; i < (8 + m_OpCode.del); i++, Address++)
+            {
+                uint8_t vecByte = 15 - (i & 0xF);
+                uint32_t dmemAddr = (Address ^ 3) & 0xFFF;
+                m_Assembler->pextrb(asmjit::x86::byte_ptr(asmjit::x86::r15, dmemAddr), vt, vecByte);
+            }
+        }
+    }
+    else if (m_OpCode.del == 0)
+    {
+        asmjit::x86::Xmm vt = m_RegState.MapXmmTemp(true, m_OpCode.vt, 0);
+
+        asmjit::x86::Gpd addr = asmjit::x86::eax;
+        m_Assembler->mov(addr, asmjit::x86::dword_ptr(asmjit::x86::r14, GprOffset(m_OpCode.base)));
+        if (m_OpCode.voffset != 0)
+        {
+            m_Assembler->add(addr, m_OpCode.voffset << 3);
+        }
+        m_Assembler->and_(addr, 0xFFF);
+
+        asmjit::Label unaligned = m_Assembler->newLabel();
+        asmjit::Label done = m_Assembler->newLabel();
+        m_Assembler->test(addr, 0x7);
+        m_Assembler->jnz(unaligned);
+
+        m_Assembler->pshufd(vt, vt, 0x1B);
+        m_Assembler->movq(asmjit::x86::ptr(asmjit::x86::r15, asmjit::x86::rax), vt);
+        m_Assembler->pshufd(vt, vt, 0x1B);
+
+        m_Assembler->SetSecondarySection();
+        m_Assembler->bind(unaligned);
+        m_Assembler->movdqa(asmjit::x86::ptr(asmjit::x86::r14, VectorOffset(m_OpCode.vt)), vt);
+
+        m_Assembler->mov(asmjit::x86::ecx, addr);
+        m_Assembler->xor_(asmjit::x86::edx, asmjit::x86::edx);
+        m_Assembler->mov(asmjit::x86::r11d, 8);
+
+        asmjit::Label loopStart = m_Assembler->newLabel();
+        m_Assembler->bind(loopStart);
+
+        m_Assembler->mov(asmjit::x86::r8d, asmjit::x86::edx);
+        m_Assembler->and_(asmjit::x86::r8d, 0xF);
+        m_Assembler->mov(asmjit::x86::r9d, 15);
+        m_Assembler->sub(asmjit::x86::r9d, asmjit::x86::r8d);
+
+        m_Assembler->mov(asmjit::x86::r8d, asmjit::x86::ecx);
+        m_Assembler->xor_(asmjit::x86::r8d, 3);
+        m_Assembler->and_(asmjit::x86::r8d, 0xFFF);
+
+        m_Assembler->lea(asmjit::x86::r10, asmjit::x86::ptr(asmjit::x86::r14, VectorOffset(m_OpCode.vt)));
+        m_Assembler->mov(asmjit::x86::r10b, asmjit::x86::byte_ptr(asmjit::x86::r10, asmjit::x86::r9));
+        m_Assembler->mov(asmjit::x86::byte_ptr(asmjit::x86::r15, asmjit::x86::r8), asmjit::x86::r10b);
+
+        m_Assembler->inc(asmjit::x86::ecx);
+        m_Assembler->inc(asmjit::x86::edx);
+        m_Assembler->cmp(asmjit::x86::edx, asmjit::x86::r11d);
+        m_Assembler->jl(loopStart);
+
+        m_Assembler->jmp(done);
+        m_Assembler->SetPrimarySection();
+        m_Assembler->bind(done);
+    }
+    else
+    {
+        asmjit::x86::Xmm vtReg = m_RegState.VRegMapping(m_OpCode.vt);
+        if (vtReg.isValid())
+        {
+            m_Assembler->movdqa(asmjit::x86::ptr(asmjit::x86::r14, VectorOffset(m_OpCode.vt)), vtReg);
+        }
+
+        m_Assembler->mov(asmjit::x86::ecx, asmjit::x86::dword_ptr(asmjit::x86::r14, GprOffset(m_OpCode.base)));
+        if (m_OpCode.voffset != 0)
+        {
+            m_Assembler->add(asmjit::x86::ecx, m_OpCode.voffset << 3);
+        }
+        m_Assembler->and_(asmjit::x86::ecx, 0xFFF);
+
+        m_Assembler->mov(asmjit::x86::eax, m_OpCode.del);
+        m_Assembler->mov(asmjit::x86::edx, m_OpCode.del + 8);
+
+        asmjit::Label loopStart = m_Assembler->newLabel();
+        asmjit::Label loopEnd = m_Assembler->newLabel();
+
+        m_Assembler->bind(loopStart);
+        m_Assembler->cmp(asmjit::x86::eax, asmjit::x86::edx);
+        m_Assembler->jge(loopEnd);
+
+        m_Assembler->mov(asmjit::x86::r8d, asmjit::x86::eax);
+        m_Assembler->and_(asmjit::x86::r8d, 0xF);
+        m_Assembler->mov(asmjit::x86::r9d, 15);
+        m_Assembler->sub(asmjit::x86::r9d, asmjit::x86::r8d);
+
+        m_Assembler->mov(asmjit::x86::r8d, asmjit::x86::ecx);
+        m_Assembler->xor_(asmjit::x86::r8d, 3);
+        m_Assembler->and_(asmjit::x86::r8d, 0xFFF);
+
+        m_Assembler->lea(asmjit::x86::r10, asmjit::x86::ptr(asmjit::x86::r14, VectorOffset(m_OpCode.vt)));
+        m_Assembler->mov(asmjit::x86::r10b, asmjit::x86::byte_ptr(asmjit::x86::r10, asmjit::x86::r9));
+        m_Assembler->mov(asmjit::x86::byte_ptr(asmjit::x86::r15, asmjit::x86::r8), asmjit::x86::r10b);
+
+        m_Assembler->inc(asmjit::x86::ecx);
+        m_Assembler->inc(asmjit::x86::eax);
+        m_Assembler->jmp(loopStart);
+
+        m_Assembler->bind(loopEnd);
+    }
 }
 
 void CRSPRecompilerOps::Opcode_SQV(void)
@@ -2475,6 +2941,8 @@ void CRSPRecompilerOps::UnknownOpcode(void)
 
 void CRSPRecompilerOps::EnterCodeBlock(void)
 {
+    m_Assembler->push(asmjit::x86::r14);
+    m_Assembler->push(asmjit::x86::r15);
     m_Assembler->sub(asmjit::x86::rsp, FunctionStackSize);
     if (Profiling && m_CurrentBlock->CodeType() == RspCodeType_TASK)
     {
@@ -2489,6 +2957,8 @@ void CRSPRecompilerOps::EnterCodeBlock(void)
         m_Assembler->CallThis(RSPSystem.SyncSystem(), AddressOf(&CRSPSystem::ExecuteOps), "CRSPSystem::ExecuteOps");
         m_Assembler->CallThis(&RSPSystem, AddressOf(&CRSPSystem::BasicSyncCheck), "CRSPSystem::BasicSyncCheck");
     }
+    m_Assembler->mov(asmjit::x86::r14, (uint64_t)&m_System.m_Reg);
+    m_Assembler->mov(asmjit::x86::r15, (uint64_t)m_System.m_DMEM);
 }
 
 void CRSPRecompilerOps::ExitCodeBlock(void)
@@ -2498,6 +2968,8 @@ void CRSPRecompilerOps::ExitCodeBlock(void)
         m_Assembler->CallFunc(AddressOf(&StopTimer), "StopTimer");
     }
     m_Assembler->add(asmjit::x86::rsp, FunctionStackSize);
+    m_Assembler->pop(asmjit::x86::r15);
+    m_Assembler->pop(asmjit::x86::r14);
     m_Assembler->ret();
 }
 
