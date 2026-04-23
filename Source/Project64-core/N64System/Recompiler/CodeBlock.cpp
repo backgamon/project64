@@ -422,7 +422,7 @@ void CCodeBlock::LogSectionInfo()
 
 bool CCodeBlock::AnalyseBlock()
 {
-    if (!g_System->bLinkBlocks())
+    if (!GameLinkBlocks())
     {
         return true;
     }
@@ -867,7 +867,7 @@ bool CCodeBlock::AnalyzeInstruction(uint32_t PC, uint32_t & TargetPC, uint32_t &
 bool CCodeBlock::Compile()
 {
     m_RecompilerOps->EnterCodeBlock();
-    if (g_System->bLinkBlocks())
+    if (GameLinkBlocks())
     {
         while (m_EnterSection != nullptr && m_EnterSection->GenerateNativeCode(NextTest()))
             ;
@@ -901,7 +901,7 @@ uint32_t CCodeBlock::Finilize(CRecompMemory & RecompMem)
     }
     m_CompiledLocation = RecompMem.RecompPos();
     m_CodeHolder.relocateToBase((uint64_t)m_CompiledLocation);
-    if (CDebugSettings::bRecordRecompilerAsm())
+    if (g_DebugSettings.recordRecompilerAsm)
     {
         std::string CodeLog = m_CodeLog;
         m_CodeLog.clear();
@@ -937,7 +937,7 @@ uint32_t CCodeBlock::NextTest()
 
 void CCodeBlock::Log(_Printf_format_string_ const char * Text, ...)
 {
-    if (!CDebugSettings::bRecordRecompilerAsm())
+    if (!g_DebugSettings.recordRecompilerAsm)
     {
         return;
     }
