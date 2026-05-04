@@ -7,6 +7,8 @@
 #include <Project64-core/N64System/Recompiler/x64-86/x64ops.h>
 
 class CX64Ops;
+class CRecompiler;
+class CN64Rom;
 struct CJumpInfo;
 
 class CX64RecompilerOps :
@@ -231,10 +233,13 @@ private:
     CX64RecompilerOps(const CX64RecompilerOps &);
     CX64RecompilerOps & operator=(const CX64RecompilerOps &);
 
+    CRecompiler *& m_Recompiler;
+    CN64Rom & m_Rom;
     CX64RegInfo m_RegWorkingSet;
     CX64Ops m_Assembler;
     CMipsMemoryVM & m_MMU;
     PIPELINE_STAGE m_PipelineStage;
+    const uint32_t & m_CompilePC;
 };
 
 typedef CX64RecompilerOps CRecompilerOps;
