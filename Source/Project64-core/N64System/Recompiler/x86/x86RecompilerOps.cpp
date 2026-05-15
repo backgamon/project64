@@ -191,7 +191,9 @@ CX86RecompilerOps::CX86RecompilerOps(CN64System & m_System, CCodeBlock & CodeBlo
     m_RegWorkingSet(CodeBlock, m_Assembler),
     m_CompilePC(m_Instruction.Address32()),
     m_RegBeforeDelay(CodeBlock, m_Assembler),
-    m_EffectDelaySlot(false)
+    m_EffectDelaySlot(false),
+    m_ColdEntryOffset(0),
+    m_WarmEntryOffset(0)
 {
 }
 
@@ -8328,6 +8330,7 @@ void CX86RecompilerOps::TestReadBreakpoint(const asmjit::x86::Gp & AddressReg, u
 
 void CX86RecompilerOps::EnterCodeBlock()
 {
+    m_ColdEntryOffset = (uint32_t)m_Assembler.offset();
 #ifdef _DEBUG
     m_Assembler.push(asmjit::x86::esi);
 #else
@@ -8335,6 +8338,7 @@ void CX86RecompilerOps::EnterCodeBlock()
     m_Assembler.push(asmjit::x86::esi);
     m_Assembler.push(asmjit::x86::ebx);
 #endif
+    m_WarmEntryOffset = (uint32_t)m_Assembler.offset();
 }
 
 void CX86RecompilerOps::ExitCodeBlock()
@@ -8613,12 +8617,16 @@ void CX86RecompilerOps::CompileCheckFPUResult64(asmjit::x86::Gp RegPointer)
     m_Assembler.mov(TempReg, asmjit::x86::dword_ptr(RegPointer, 4));
     m_Assembler.mov(TempReg2, asmjit::x86::dword_ptr(RegPointer));
     m_RegWorkingSet.BeforeCallDirect();
+    m_Assembler.push(RegPointer);
+    m_Assembler.PushImm32("FE_ALL_EXCEPT", FE_ALL_EXCEPT);
+    m_Assembler.CallFunc((uint32_t)fetestexcept, "fetestexcept");
+    m_Assembler.add(asmjit::x86::esp, 4);
+    m_Assembler.MoveX86regToVariable(&softfloat_exceptionFlags, "softfloat_exceptionFlags", asmjit::x86::eax);
     if (m_PipelineStage == PIPELINE_STAGE_JUMP || m_PipelineStage == PIPELINE_STAGE_DELAY_SLOT)
     {
         m_Assembler.MoveConstToVariable(&g_System->m_PipelineStage, "System->m_PipelineStage", PIPELINE_STAGE_JUMP);
     }
     m_Assembler.MoveConstToVariable(&m_Reg.m_PROGRAM_COUNTER, "PROGRAM_COUNTER", m_CompilePC);
-    m_Assembler.push(RegPointer);
     m_Assembler.CallThis((uint32_t)&g_System->m_OpCodes, AddressOf(&R4300iOp::CheckFPUResult64), "R4300iOp::CheckFPUResult64", 8);
     m_Assembler.test(asmjit::x86::al, asmjit::x86::al);
     m_RegWorkingSet.AfterCallDirect();
@@ -9629,6 +9637,16 @@ void CX86RecompilerOps::OverflowDelaySlot(bool TestTimer)
 
     ExitCodeBlock();
     m_PipelineStage = PIPELINE_STAGE_END_BLOCK;
+}
+
+uint32_t CX86RecompilerOps::ColdEntryOffset(void) const
+{
+    return m_ColdEntryOffset;
+}
+
+uint32_t CX86RecompilerOps::WarmEntryOffset(void) const
+{
+    return m_WarmEntryOffset;
 }
 
 void CX86RecompilerOps::CompileExit(uint32_t JumpPC, uint32_t TargetPC, CRegInfo & ExitRegSet, ExitReason reason)
