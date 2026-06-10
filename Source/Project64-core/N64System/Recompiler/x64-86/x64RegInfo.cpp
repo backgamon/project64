@@ -7,6 +7,24 @@
 
 namespace
 {
+static constexpr uint32_t kX64AllocatableRegIds[] = {
+    asmjit::x86::Gp::kIdBx,
+    asmjit::x86::Gp::kIdR12,
+    asmjit::x86::Gp::kIdR13,
+    asmjit::x86::Gp::kIdR14,
+    asmjit::x86::Gp::kIdR15,
+    asmjit::x86::Gp::kIdDi,
+    asmjit::x86::Gp::kIdSi,
+    asmjit::x86::Gp::kIdBp,
+    asmjit::x86::Gp::kIdAx,
+    asmjit::x86::Gp::kIdCx,
+    asmjit::x86::Gp::kIdDx,
+    asmjit::x86::Gp::kIdR8,
+    asmjit::x86::Gp::kIdR9,
+    asmjit::x86::Gp::kIdR10,
+    asmjit::x86::Gp::kIdR11,
+};
+static constexpr uint32_t kX64AllocatableRegCount = sizeof(kX64AllocatableRegIds) / sizeof(kX64AllocatableRegIds[0]);
 asmjit::x86::Gp GetX64RegFromPhysId(uint32_t PhysId, asmjit::RegType RegType = asmjit::RegType::kX86_Gpq)
 {
     using namespace asmjit::x86;
@@ -116,7 +134,7 @@ CX64RegInfo::CX64RegInfo(const CX64RegInfo & rhs) :
     m_CodeBlock(rhs.m_CodeBlock),
     m_Assembler(rhs.m_Assembler)
 {
-    g_Notify->BreakPoint(__FILE__, __LINE__);
+    *this = rhs;
 }
 
 CX64RegInfo::~CX64RegInfo()
@@ -278,6 +296,43 @@ void CX64RegInfo::AfterCallDirect(void)
     m_InBeforeCallDirect = m_CallDirectPushCount != 0;
 }
 
+bool CX64RegInfo::UnMap_X64reg(const asmjit::x86::Gp & Reg)
+{
+    const uint32_t RegIndex = Reg.id();
+    if (GetX64Mapped(RegIndex) == NotMapped)
+    {
+        if (!GetX64Protected(RegIndex))
+        {
+            return true;
+        }
+    }
+    else if (GetX64Mapped(RegIndex) == CX64RegInfo::GPR_Mapped)
+    {
+        for (int i = 1; i < 32; i++)
+        {
+            if (!IsMapped(i))
+            {
+                continue;
+            }
+
+            if (GetMipsRegMap(i) == Reg)
+            {
+                if (!GetX64Protected(RegIndex))
+                {
+                    UnMap_GPR(i, true);
+                    return true;
+                }
+                break;
+            }
+        }
+    }
+    else
+    {
+        g_Notify->BreakPoint(__FILE__, __LINE__);
+    }
+    return false;
+}
+
 void CX64RegInfo::ProtectGPR(uint32_t MipsReg)
 {
     if (IsUnknown(MipsReg) || IsConst(MipsReg))
@@ -358,12 +413,102 @@ void CX64RegInfo::Map_GPR_32bit(int32_t MipsReg, bool SignValue, int32_t MipsReg
 
 void CX64RegInfo::WriteBackRegisters()
 {
+    for (uint32_t k = 0; k < kX64AllocatableRegCount; k++)
+    {
+        SetX64Protected(kX64AllocatableRegIds[k], false);
+    }
+    for (uint32_t k = 0; k < kX64AllocatableRegCount; k++)
+    {
+        UnMap_X64reg(GetX64RegFromPhysId(kX64AllocatableRegIds[k]));
+    }
+
+    bool bEdiZero = false;
+    bool bEsiSign = false;
+
+    for (int32_t count = 1; count < 32; count++)
+    {
+        switch (GetMipsRegState(count))
+        {
+        case CRegBase::STATE_UNKNOWN:
+            break;
+        case CRegBase::STATE_CONST_32_SIGN:
+            if (!g_GameSettings.core32Bit)
+            {
+                if (!bEdiZero && (!GetMipsRegLo(count) || !(GetMipsRegLo(count) & 0x80000000)))
+                {
+                    m_Assembler.xor_(asmjit::x86::edi, asmjit::x86::edi);
+                    bEdiZero = true;
+                }
+                if (!bEsiSign && (GetMipsRegLo(count) & 0x80000000))
+                {
+                    m_Assembler.mov(asmjit::x86::esi, 0xFFFFFFFFu);
+                    bEsiSign = true;
+                }
+                if ((GetMipsRegLo(count) & 0x80000000) != 0)
+                {
+                    m_Assembler.MovDwordToVariable(&m_Reg.m_GPR[count].UW[1], CRegName::GPR_Hi[count], asmjit::x86::esi);
+                }
+                else
+                {
+                    m_Assembler.MovDwordToVariable(&m_Reg.m_GPR[count].UW[1], CRegName::GPR_Hi[count], asmjit::x86::edi);
+                }
+            }
+
+            if (GetMipsRegLo(count) == 0)
+            {
+                if (g_GameSettings.core32Bit)
+                {
+                    if (!bEdiZero)
+                    {
+                        m_Assembler.xor_(asmjit::x86::edi, asmjit::x86::edi);
+                        bEdiZero = true;
+                    }
+                }
+                m_Assembler.MovDwordToVariable(&m_Reg.m_GPR[count].UW[0], CRegName::GPR_Lo[count], asmjit::x86::edi);
+            }
+            else if (GetMipsRegLo(count) == 0xFFFFFFFF)
+            {
+                if (g_GameSettings.core32Bit)
+                {
+                    if (!bEsiSign)
+                    {
+                        m_Assembler.mov(asmjit::x86::esi, 0xFFFFFFFFu);
+                        bEsiSign = true;
+                    }
+                }
+                m_Assembler.MovDwordToVariable(&m_Reg.m_GPR[count].UW[0], CRegName::GPR_Lo[count], asmjit::x86::esi);
+            }
+            else
+            {
+                m_Assembler.MoveConstToVariable(&m_Reg.m_GPR[count].UW[0], CRegName::GPR_Lo[count], GetMipsRegLo(count));
+            }
+
+            SetMipsRegState(count, CRegBase::STATE_UNKNOWN);
+            break;
+        case CRegBase::STATE_MAPPED_32_SIGN:
+        case CRegBase::STATE_MAPPED_32_ZERO:
+            if (!GetMipsRegMap(count).isValid())
+            {
+                SetMipsRegState(count, CRegBase::STATE_UNKNOWN);
+                break;
+            }
+            UnMap_GPR(count, true);
+            break;
+        default:
+            m_CodeBlock.Log("%s: Unknown State: %d reg %d (%s)", __FUNCTION__, GetMipsRegState(count), count, CRegName::GPR[count]);
+            g_Notify->BreakPoint(__FILE__, __LINE__);
+        }
+    }
 }
 
 void CX64RegInfo::UnMap_GPR(uint32_t Reg, bool WriteBackValue)
 {
     if (Reg == 0)
     {
+        if (g_DebugSettings.haveDebugger)
+        {
+            g_Notify->DisplayError(stdstr_f("%s\n\nWhy are you trying to unmap register 0?", __FUNCTION__).c_str());
+        }
         g_Notify->BreakPoint(__FILE__, __LINE__);
         return;
     }
@@ -384,30 +529,39 @@ void CX64RegInfo::UnMap_GPR(uint32_t Reg, bool WriteBackValue)
         return;
     }
 
-    g_Notify->BreakPoint(__FILE__, __LINE__);
+    m_CodeBlock.Log("    regcache: unallocate %s from %s", X64GpName(GetMipsRegMap(Reg)), Is64Bit(Reg) ? CRegName::GPR[Reg] : CRegName::GPR_Lo[Reg]);
+    const uint32_t RegIndex = GetMipsRegMap(Reg).id();
+    SetX64Mapped(RegIndex, NotMapped);
+    SetX64Protected(RegIndex, false);
+    if (WriteBackValue)
+    {
+        if (Is64Bit(Reg))
+        {
+            m_Assembler.MovQwordToVariable(&m_Reg.m_GPR[Reg].UDW, CRegName::GPR[Reg], GetMipsRegMap(Reg));
+        }
+        else
+        {
+            m_Assembler.MovDwordToVariable(&m_Reg.m_GPR[Reg].UW[0], CRegName::GPR_Lo[Reg], GetMipsRegMap(Reg));
+            if (!g_GameSettings.core32Bit)
+            {
+                if (IsSigned(Reg))
+                {
+                    m_Assembler.sar(GetMipsRegMap(Reg).r32(), 31);
+                    m_Assembler.MovDwordToVariable(&m_Reg.m_GPR[Reg].UW[1], CRegName::GPR_Hi[Reg], GetMipsRegMap(Reg));
+                }
+                else
+                {
+                    m_Assembler.MoveConstToVariable(&m_Reg.m_GPR[Reg].UW[1], CRegName::GPR_Hi[Reg], 0u);
+                }
+            }
+        }
+    }
+    SetMipsRegState(Reg, STATE_UNKNOWN);
+    SetMipsRegMap(Reg, asmjit::x86::Gp());
 }
 
 asmjit::x86::Gp CX64RegInfo::FreeX64Reg(asmjit::RegType RegType)
 {
-    static constexpr uint32_t kX64AllocatableRegIds[] = {
-        asmjit::x86::Gp::kIdBx,
-        asmjit::x86::Gp::kIdR12,
-        asmjit::x86::Gp::kIdR13,
-        asmjit::x86::Gp::kIdR14,
-        asmjit::x86::Gp::kIdR15,
-        asmjit::x86::Gp::kIdDi,
-        asmjit::x86::Gp::kIdSi,
-        asmjit::x86::Gp::kIdBp,
-        asmjit::x86::Gp::kIdAx,
-        asmjit::x86::Gp::kIdCx,
-        asmjit::x86::Gp::kIdDx,
-        asmjit::x86::Gp::kIdR8,
-        asmjit::x86::Gp::kIdR9,
-        asmjit::x86::Gp::kIdR10,
-        asmjit::x86::Gp::kIdR11,
-    };
-    static constexpr uint32_t kX64AllocatableRegCount = sizeof(kX64AllocatableRegIds) / sizeof(kX64AllocatableRegIds[0]);
-
     for (uint32_t k = 0; k < kX64AllocatableRegCount; k++)
     {
         const uint32_t physId = kX64AllocatableRegIds[k];
