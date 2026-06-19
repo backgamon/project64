@@ -223,7 +223,7 @@ public:
     const R4300iOpcode & GetOpcode(void) const;
     void PreCompileOpcode(void);
     void PostCompileOpcode(void);
-    void CompileExit(uint32_t JumpPC, uint32_t TargetPC, CRegInfo & ExitRegSet, ExitReason reason);
+    void CompileExit(uint32_t JumpPC, uint32_t TargetPC, CRegInfo ExitRegSet, ExitReason reason, void (CX64Ops::*x64Jmp)(const char * LabelName, asmjit::Label & JumpLabel) = nullptr);
 
     void UpdateCounters(CRegInfo & RegSet, bool CheckTimer, bool ClearValues = false, bool UpdateTimer = true);
     void CompileSystemCheck(uint32_t TargetPC, const CRegInfo & RegSet);
@@ -252,9 +252,11 @@ private:
     CX64Ops m_Assembler;
     CMipsMemoryVM & m_MMU;
     PIPELINE_STAGE m_PipelineStage;
+    bool m_EffectDelaySlot;
     const uint32_t & m_CompilePC;
     uint32_t m_ColdEntryOffset;
     uint32_t m_WarmEntryOffset;
+    uint32_t m_ExitLabelCount;
 
     static uint32_t m_TempValue32;
 };
