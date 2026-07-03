@@ -3,7 +3,9 @@
 
 #include <Project64-core/N64System/Mips/Register.h>
 #include <Project64-core/N64System/Recompiler/CodeBlock.h>
+#include <Project64-core/N64System/Recompiler/Recompiler.h>
 #include <Project64-core/N64System/Recompiler/x64-86/x64RegInfo.h>
+#include <Project64-core/N64System/SystemGlobals.h>
 
 namespace
 {
@@ -215,6 +217,11 @@ void CX64RegInfo::SetMipsRegMap(int32_t MipsReg, const asmjit::x86::Gp & Reg)
     m_RegMap[MipsReg] = Reg;
 }
 
+uint32_t CX64RegInfo::GetX64MapOrder(uint32_t PhysId) const
+{
+    return m_x64reg_MapOrder[PhysId];
+}
+
 bool CX64RegInfo::GetX64Protected(uint32_t PhysId) const
 {
     return m_x64reg_Protected[PhysId];
@@ -347,6 +354,14 @@ bool CX64RegInfo::UnMap_X64reg(const asmjit::x86::Gp & Reg)
     else if (IsTempMapped(GetX64Mapped(RegIndex)))
     {
         m_CodeBlock.Log("    regcache: unallocate %s from temp storage", X64GpName(Reg));
+        SetX64Mapped(RegIndex, NotMapped);
+        SetX64Protected(RegIndex, false);
+        return true;
+    }
+    else if (GetX64Mapped(RegIndex) == CX64RegInfo::Stack_Mapped)
+    {
+        m_CodeBlock.Log("    regcache: unallocate %s from memory stack", X64GpName(Reg));
+        m_Assembler.MovQwordToVariable(&g_Recompiler->MemoryStackPos(), "MemoryStack", Reg);
         SetX64Mapped(RegIndex, NotMapped);
         SetX64Protected(RegIndex, false);
         return true;
@@ -553,6 +568,57 @@ void CX64RegInfo::ProtectGPR(uint32_t MipsReg)
     SetX64Protected(GetMipsRegMap(MipsReg).id(), true);
 }
 
+asmjit::x86::Gp CX64RegInfo::Get_MemoryStack() const
+{
+    for (uint32_t k = 0; k < kX64AllocatableRegCount; k++)
+    {
+        const uint32_t physId = kX64AllocatableRegIds[k];
+        if (GetX64Mapped(physId) == Stack_Mapped)
+        {
+            return GetX64RegFromPhysId(physId, asmjit::RegType::kX86_Gpq);
+        }
+    }
+    return asmjit::x86::Gp();
+}
+
+asmjit::x86::Gp CX64RegInfo::Map_MemoryStack(const asmjit::x86::Gp & Reg, bool bMapRegister, bool LoadValue)
+{
+    asmjit::x86::Gp CurrentMap = Get_MemoryStack();
+    if (!bMapRegister)
+    {
+        return CurrentMap;
+    }
+
+    if (CurrentMap.isValid() && CurrentMap == Reg)
+    {
+        return CurrentMap;
+    }
+
+    if (!Reg.isValid())
+    {
+        if (CurrentMap.isValid())
+        {
+            return CurrentMap;
+        }
+        asmjit::x86::Gp MemoryStackReg = FreeX64Reg(asmjit::RegType::kX86_Gpq);
+        if (!MemoryStackReg.isValid())
+        {
+            g_Notify->DisplayError("Map_MemoryStack\n\nOut of registers");
+            g_Notify->BreakPoint(__FILE__, __LINE__);
+            return asmjit::x86::Gp();
+        }
+        SetX64Mapped(MemoryStackReg.id(), Stack_Mapped);
+        m_CodeBlock.Log("    regcache: allocate %s as Memory Stack", X64GpName(MemoryStackReg));
+        if (LoadValue)
+        {
+            m_Assembler.MoveVariable64ToX64reg(MemoryStackReg, &g_Recompiler->MemoryStackPos(), "MemoryStack");
+        }
+        return MemoryStackReg;
+    }
+    g_Notify->BreakPoint(__FILE__, __LINE__);
+    return Reg;
+}
+
 void CX64RegInfo::Map_GPR_32bit(int32_t MipsReg, bool SignValue, int32_t MipsRegToLoad)
 {
     if (MipsReg == 0)
@@ -565,7 +631,7 @@ void CX64RegInfo::Map_GPR_32bit(int32_t MipsReg, bool SignValue, int32_t MipsReg
     if (IsUnknown(MipsReg) || IsConst(MipsReg))
     {
         Reg = FreeX64Reg(asmjit::RegType::kX86_Gpd);
-        if (Reg.isNone())
+        if (!Reg.isValid())
         {
             if (g_DebugSettings.haveDebugger)
             {
@@ -771,6 +837,24 @@ void CX64RegInfo::UnMap_GPR(uint32_t Reg, bool WriteBackValue)
     SetMipsRegMap(Reg, asmjit::x86::Gp());
 }
 
+asmjit::x86::Gp CX64RegInfo::UnMap_TempReg(asmjit::RegType RegType)
+{
+    const REG_MAPPED TempMapping = RegType == asmjit::RegType::kX86_Gpq ? Temp_Mapped64 : Temp_Mapped32;
+    for (uint32_t k = 0; k < kX64AllocatableRegCount; k++)
+    {
+        const uint32_t physId = kX64AllocatableRegIds[k];
+        if (GetX64Mapped(physId) == TempMapping && !GetX64Protected(physId))
+        {
+            asmjit::x86::Gp Reg = GetX64RegFromPhysId(physId, RegType);
+            m_CodeBlock.Log("    regcache: unallocate %s from temp storage", X64GpName(Reg));
+            SetX64Mapped(physId, NotMapped);
+            SetX64Protected(physId, false);
+            return Reg;
+        }
+    }
+    return asmjit::x86::Gp();
+}
+
 asmjit::x86::Gp CX64RegInfo::FreeX64Reg(asmjit::RegType RegType)
 {
     for (uint32_t k = 0; k < kX64AllocatableRegCount; k++)
@@ -785,6 +869,60 @@ asmjit::x86::Gp CX64RegInfo::FreeX64Reg(asmjit::RegType RegType)
             return GetX64RegFromPhysId(physId, RegType);
         }
     }
+
+    asmjit::x86::Gp Reg = UnMap_TempReg(RegType);
+    if (Reg.isValid())
+    {
+        return Reg;
+    }
+
+    uint32_t MapCount[kX64AllocatableRegCount];
+    uint32_t MapReg[kX64AllocatableRegCount];
+
+    for (uint32_t i = 0; i < kX64AllocatableRegCount; i++)
+    {
+        const uint32_t physId = kX64AllocatableRegIds[i];
+        MapCount[i] = GetX64MapOrder(physId);
+        MapReg[i] = physId;
+    }
+    for (uint32_t i = 0; i < kX64AllocatableRegCount; i++)
+    {
+        for (uint32_t z = 0; z + 1 < kX64AllocatableRegCount; z++)
+        {
+            if (MapCount[z] < MapCount[z + 1])
+            {
+                uint32_t TempCount = MapCount[z];
+                MapCount[z] = MapCount[z + 1];
+                MapCount[z + 1] = TempCount;
+                const uint32_t tempReg = MapReg[z];
+                MapReg[z] = MapReg[z + 1];
+                MapReg[z + 1] = tempReg;
+            }
+        }
+    }
+
+    asmjit::x86::Gp StackReg;
+    for (uint32_t i = 0; i < kX64AllocatableRegCount; i++)
+    {
+        if (MapCount[i] > 0 && GetX64Mapped(MapReg[i]) != Stack_Mapped)
+        {
+            asmjit::x86::Gp Reg = GetX64RegFromPhysId(MapReg[i], RegType);
+            if (UnMap_X64reg(Reg))
+            {
+                return Reg;
+            }
+        }
+        if (GetX64Mapped(MapReg[i]) == Stack_Mapped)
+        {
+            StackReg = GetX64RegFromPhysId(MapReg[i], RegType);
+        }
+    }
+
+    if (StackReg.isValid() && UnMap_X64reg(StackReg))
+    {
+        return StackReg;
+    }
+
     return asmjit::x86::Gp();
 }
 
