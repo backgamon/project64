@@ -316,6 +316,19 @@ void CX64Ops::SubConstFromVariable(uint32_t Const, void * Variable, const char *
     }
 }
 
+void CX64Ops::AndConstToVariable(void * Variable, const char * VariableName, uint32_t Const)
+{
+    AddNumberSymbol((uintptr_t)Variable, VariableName);
+    if (asmjit::Support::isUInt32((uintptr_t)Variable))
+    {
+        and_(asmjit::x86::dword_ptr_abs((uintptr_t)Variable), Const);
+    }
+    else
+    {
+        g_Notify->BreakPoint(__FILE__, __LINE__);
+    }
+}
+
 void CX64Ops::XorVariableToX64reg(const asmjit::x86::Gp & Reg, void * Variable, const char * VariableName)
 {
     AddNumberSymbol((uintptr_t)Variable, VariableName);
@@ -345,7 +358,15 @@ void CX64Ops::MoveVariableToX64reg(const asmjit::x86::Gp & Reg, void * Variable,
     }
     else
     {
-        g_Notify->BreakPoint(__FILE__, __LINE__);
+        mov(Reg.r64(), (uintptr_t)Variable);
+        if (SignExtend)
+        {
+            movsxd(Reg.r64(), asmjit::x86::dword_ptr(Reg.r64()));
+        }
+        else
+        {
+            mov(Reg.r32(), asmjit::x86::dword_ptr(Reg.r64()));
+        }
     }
 }
 
