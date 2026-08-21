@@ -34,6 +34,19 @@ void CX64RecompilerOps::Compile_TrapCompare(RecompilerTrapCompare /*CompareType*
     g_Notify->BreakPoint(__FILE__, __LINE__);
 }
 
+void CX64RecompilerOps::CompileCop1Test()
+{
+    if (m_RegWorkingSet.GetFpuBeenUsed())
+    {
+        return;
+    }
+
+    m_Assembler.finit();
+    m_Assembler.TestVariable(&g_Reg->STATUS_REGISTER, "STATUS_REGISTER", STATUS_CU1);
+    CompileExit(m_CompilePC, m_CompilePC, m_RegWorkingSet.WithAddedCycles(g_GameSettings.countPerOp), ExitReason_COP1Unuseable, &CX64Ops::JeLabel);
+    m_RegWorkingSet.SetFpuBeenUsed(true);
+}
+
 void CX64RecompilerOps::Compile_BranchCompare(RecompilerBranchCompare CompareType)
 {
     switch (CompareType)
@@ -1743,69 +1756,100 @@ void CX64RecompilerOps::SPECIAL_OR()
         return;
     }
 
-    if (m_Opcode.rs == 0)
+    const bool RsConstZero = m_RegWorkingSet.IsConst(m_Opcode.rs) && (m_RegWorkingSet.Is64Bit(m_Opcode.rs) ? m_RegWorkingSet.GetMipsReg(m_Opcode.rs) == 0 : m_RegWorkingSet.GetMipsRegLo(m_Opcode.rs) == 0);
+    const bool RtConstZero = m_RegWorkingSet.IsConst(m_Opcode.rt) && (m_RegWorkingSet.Is64Bit(m_Opcode.rt) ? m_RegWorkingSet.GetMipsReg(m_Opcode.rt) == 0 : m_RegWorkingSet.GetMipsRegLo(m_Opcode.rt) == 0);
+    if (RsConstZero || RtConstZero)
     {
-        g_Notify->BreakPoint(__FILE__, __LINE__);
-    }
-    else if (m_Opcode.rt == 0)
-    {
-        if (m_RegWorkingSet.IsConst(m_Opcode.rs))
+        const int Source = RsConstZero ? m_Opcode.rt : m_Opcode.rs;
+
+        if (Source == 0 || m_RegWorkingSet.IsConst(Source))
         {
             g_Notify->BreakPoint(__FILE__, __LINE__);
         }
-        else if (m_RegWorkingSet.Is32Bit(m_Opcode.rs))
+        else if (m_RegWorkingSet.Is32Bit(Source))
+        {
+            m_RegWorkingSet.Map_GPR_32bit(m_Opcode.rd, m_RegWorkingSet.IsSigned(Source), Source);
+        }
+        else
+        {
+            m_RegWorkingSet.Map_GPR_64bit(m_Opcode.rd, Source);
+        }
+    }
+    else if (m_RegWorkingSet.IsKnown(m_Opcode.rt) && m_RegWorkingSet.IsKnown(m_Opcode.rs) && m_RegWorkingSet.Is32Bit(m_Opcode.rt) && m_RegWorkingSet.Is32Bit(m_Opcode.rs))
+    {
+        const int source1 = m_Opcode.rd == m_Opcode.rt ? m_Opcode.rt : m_Opcode.rs;
+        const int source2 = m_Opcode.rd == m_Opcode.rt ? m_Opcode.rs : m_Opcode.rt;
+
+        m_RegWorkingSet.ProtectGPR(source1);
+        m_RegWorkingSet.ProtectGPR(source2);
+        m_RegWorkingSet.Map_GPR_32bit(m_Opcode.rd, true, source1);
+
+        if (m_RegWorkingSet.IsMapped(source2))
+        {
+            m_Assembler.or_(m_RegWorkingSet.GetMipsRegMap(m_Opcode.rd).r32(), m_RegWorkingSet.GetMipsRegMap(source2).r32());
+        }
+        else if (m_RegWorkingSet.IsConst(source2))
+        {
+            const uint32_t value = m_RegWorkingSet.GetMipsRegLo(source2);
+            if (value != 0)
+            {
+                m_Assembler.or_(m_RegWorkingSet.GetMipsRegMap(m_Opcode.rd).r32(), value);
+            }
+        }
+        else
+        {
+            g_Notify->BreakPoint(__FILE__, __LINE__);
+        }
+    }
+    else if (m_RegWorkingSet.IsKnown(m_Opcode.rt) && m_RegWorkingSet.IsKnown(m_Opcode.rs))
+    {
+        if (m_RegWorkingSet.IsMapped(m_Opcode.rt) && m_RegWorkingSet.IsMapped(m_Opcode.rs))
         {
             g_Notify->BreakPoint(__FILE__, __LINE__);
         }
         else
         {
-            m_RegWorkingSet.Map_GPR_64bit(m_Opcode.rd, m_Opcode.rs);
+            const uint32_t ConstReg = m_RegWorkingSet.IsConst(m_Opcode.rt) ? m_Opcode.rt : m_Opcode.rs;
+            const uint32_t MappedReg = m_RegWorkingSet.IsConst(m_Opcode.rt) ? m_Opcode.rs : m_Opcode.rt;
+            uint64_t ConstValue;
+            if (m_RegWorkingSet.Is64Bit(ConstReg))
+            {
+                ConstValue = m_RegWorkingSet.GetMipsReg(ConstReg);
+            }
+            else if (m_RegWorkingSet.IsSigned(ConstReg))
+            {
+                ConstValue = (uint64_t)(int64_t)m_RegWorkingSet.GetMipsRegLo_S(ConstReg);
+            }
+            else
+            {
+                ConstValue = m_RegWorkingSet.GetMipsRegLo(ConstReg);
+            }
+            m_RegWorkingSet.Map_GPR_64bit(m_Opcode.rd, MappedReg);
+            if (ConstValue != 0)
+            {
+                const asmjit::x86::Gp temp64 = m_RegWorkingSet.Map_TempReg(asmjit::x86::Gpq(), -1, asmjit::RegType::kX86_Gpq);
+                m_Assembler.mov(temp64.r64(), ConstValue);
+                m_Assembler.or_(m_RegWorkingSet.GetMipsRegMap(m_Opcode.rd).r64(), temp64.r64());
+            }
+        }
+    }
+    else if (m_RegWorkingSet.IsKnown(m_Opcode.rt) || m_RegWorkingSet.IsKnown(m_Opcode.rs))
+    {
+        const int KnownReg = m_RegWorkingSet.IsKnown(m_Opcode.rt) ? m_Opcode.rt : m_Opcode.rs;
+        const int UnknownReg = m_RegWorkingSet.IsKnown(m_Opcode.rt) ? m_Opcode.rs : m_Opcode.rt;
+
+        if (m_RegWorkingSet.IsConst(KnownReg))
+        {
+            g_Notify->BreakPoint(__FILE__, __LINE__);
+        }
+        else
+        {
+            g_Notify->BreakPoint(__FILE__, __LINE__);
         }
     }
     else
     {
-        if (m_RegWorkingSet.IsKnown(m_Opcode.rt) && m_RegWorkingSet.IsKnown(m_Opcode.rs) && m_RegWorkingSet.Is32Bit(m_Opcode.rt) && m_RegWorkingSet.Is32Bit(m_Opcode.rs))
-        {
-            const int source1 = m_Opcode.rd == m_Opcode.rt ? m_Opcode.rt : m_Opcode.rs;
-            const int source2 = m_Opcode.rd == m_Opcode.rt ? m_Opcode.rs : m_Opcode.rt;
-
-            m_RegWorkingSet.ProtectGPR(source1);
-            m_RegWorkingSet.ProtectGPR(source2);
-            m_RegWorkingSet.Map_GPR_32bit(m_Opcode.rd, true, source1);
-
-            if (m_RegWorkingSet.IsMapped(source2))
-            {
-                m_Assembler.or_(m_RegWorkingSet.GetMipsRegMap(m_Opcode.rd).r32(), m_RegWorkingSet.GetMipsRegMap(source2).r32());
-            }
-            else if (m_RegWorkingSet.IsConst(source2))
-            {
-                const uint32_t value = m_RegWorkingSet.GetMipsRegLo(source2);
-                if (value != 0)
-                {
-                    m_Assembler.or_(m_RegWorkingSet.GetMipsRegMap(m_Opcode.rd).r32(), value);
-                }
-            }
-            else
-            {
-                m_Assembler.or_(m_RegWorkingSet.GetMipsRegMap(m_Opcode.rd).r32(), asmjit::x86::dword_ptr(reinterpret_cast<uintptr_t>(&m_Reg.m_GPR[source2].W[0])));
-            }
-        }
-        else
-        {
-            m_RegWorkingSet.Map_GPR_64bit(m_Opcode.rd, m_Opcode.rt);
-            if (m_RegWorkingSet.IsMapped(m_Opcode.rs))
-            {
-                g_Notify->BreakPoint(__FILE__, __LINE__);
-            }
-            else if (m_RegWorkingSet.IsConst(m_Opcode.rs))
-            {
-                g_Notify->BreakPoint(__FILE__, __LINE__);
-            }
-            else
-            {
-                m_Assembler.or_(m_RegWorkingSet.GetMipsRegMap(m_Opcode.rd).r64(), asmjit::x86::qword_ptr(reinterpret_cast<uintptr_t>(&m_Reg.m_GPR[m_Opcode.rs].UDW)));
-            }
-        }
+        g_Notify->BreakPoint(__FILE__, __LINE__);
     }
 
     if (g_GameSettings.fastSP && m_Opcode.rd == 29)
@@ -2051,7 +2095,28 @@ void CX64RecompilerOps::COP0_DMF()
 
 void CX64RecompilerOps::COP0_MT()
 {
-    g_Notify->BreakPoint(__FILE__, __LINE__);
+    if (m_Opcode.rd == CRegisters::COP0Reg_Wired || m_Opcode.rd == CRegisters::COP0Reg_Compare || m_Opcode.rd == CRegisters::COP0Reg_Count)
+    {
+        UpdateCounters(m_RegWorkingSet, false, true);
+    }
+    m_RegWorkingSet.BeforeCallDirect();
+    if (m_RegWorkingSet.IsConst(m_Opcode.rt))
+    {
+        m_Assembler.MoveConstToX64reg(asmjit::x86::r8, (uint64_t)(int64_t)m_RegWorkingSet.GetMipsRegLo_S(m_Opcode.rt));
+    }
+    else if (m_RegWorkingSet.IsMapped(m_Opcode.rt))
+    {
+        m_Assembler.movsxd(asmjit::x86::r8, m_RegWorkingSet.GetMipsRegMap(m_Opcode.rt).r32());
+    }
+    else
+    {
+        m_Assembler.MoveVariableToX64reg(asmjit::x86::r8, &m_Reg.m_GPR[m_Opcode.rt].UW[0], CRegName::GPR_Lo[m_Opcode.rt], true);
+    }
+    m_Assembler.mov(asmjit::x86::edx, m_Opcode.rd);
+    m_Assembler.sub(asmjit::x86::rsp, 32);
+    m_Assembler.CallThis(&m_Reg, MemberFuncAddress(&CRegisters::Cop0_MT), "CRegisters::Cop0_MT");
+    m_Assembler.add(asmjit::x86::rsp, 32);
+    m_RegWorkingSet.AfterCallDirect();
 }
 
 void CX64RecompilerOps::COP0_DMT()
@@ -2096,7 +2161,21 @@ void CX64RecompilerOps::COP1_DMF()
 
 void CX64RecompilerOps::COP1_CF()
 {
-    g_Notify->BreakPoint(__FILE__, __LINE__);
+    CompileCop1Test();
+
+    if (m_Opcode.fs != 31 && m_Opcode.fs != 0)
+    {
+        UnknownOpcode();
+        return;
+    }
+
+    if (m_Opcode.rt == 0)
+    {
+        return;
+    }
+
+    m_RegWorkingSet.Map_GPR_32bit(m_Opcode.rt, true, -1);
+    m_Assembler.MoveVariableToX64reg(m_RegWorkingSet.GetMipsRegMap(m_Opcode.rt), &m_Reg.m_FPCR[m_Opcode.fs], CRegName::FPR_Ctrl[m_Opcode.fs], true);
 }
 
 void CX64RecompilerOps::COP1_MT()
@@ -2547,6 +2626,25 @@ void CX64RecompilerOps::CompileExit(uint32_t JumpPC, uint32_t TargetPC, CRegInfo
         m_Assembler.cdq();
         m_Assembler.MovDwordToVariable((void *)(((uint8_t *)&g_Reg->m_PROGRAM_COUNTER) + 4), "PROGRAM_COUNTER+4", asmjit::x86::edx);
         m_Assembler.MoveConstToVariable(&g_System->m_PipelineStage, "System->m_PipelineStage", PIPELINE_STAGE_NORMAL);
+        ExitCodeBlock();
+        break;
+    }
+    case ExitReason_COP1Unuseable:
+    {
+        const bool InDelaySlot = m_PipelineStage == PIPELINE_STAGE_JUMP || m_PipelineStage == PIPELINE_STAGE_DELAY_SLOT;
+        m_Assembler.MoveConstToVariable(&g_System->m_PipelineStage, "System->m_PipelineStage", InDelaySlot ? PIPELINE_STAGE_JUMP : PIPELINE_STAGE_NORMAL);
+        m_Assembler.mov(asmjit::x86::rdx, EXC_CPU);
+        m_Assembler.mov(asmjit::x86::r8d, 1);
+        m_Assembler.sub(asmjit::x86::rsp, 32);
+        m_Assembler.CallThis(g_Reg, MemberFuncAddress(&CRegisters::TriggerException), "CRegisters::TriggerException");
+        m_Assembler.add(asmjit::x86::rsp, 32);
+        m_Assembler.MoveVariableToX64reg(asmjit::x86::eax, &g_System->m_JumpToLocation, "System->m_JumpToLocation", false);
+        m_Assembler.MovDwordToVariable(&g_Reg->m_PROGRAM_COUNTER, "PROGRAM_COUNTER", asmjit::x86::eax);
+        m_Assembler.cdq();
+        m_Assembler.MovDwordToVariable((void *)(((uint8_t *)&g_Reg->m_PROGRAM_COUNTER) + 4), "PROGRAM_COUNTER+4", asmjit::x86::edx);
+        m_Assembler.MoveConstToVariable(&g_System->m_PipelineStage, "System->m_PipelineStage", PIPELINE_STAGE_NORMAL);
+        ExitRegSet.SetBlockCycleCount(0);
+        UpdateCounters(ExitRegSet, true, false, false);
         ExitCodeBlock();
         break;
     }
