@@ -549,7 +549,39 @@ void CX64RecompilerOps::BGTZ_Compare()
 
 void CX64RecompilerOps::BLEZ_Compare()
 {
-    g_Notify->BreakPoint(__FILE__, __LINE__);
+    if (m_RegWorkingSet.IsConst(m_Opcode.rs))
+    {
+        g_Notify->BreakPoint(__FILE__, __LINE__);
+    }
+    else if (m_RegWorkingSet.IsMapped(m_Opcode.rs))
+    {
+        g_Notify->BreakPoint(__FILE__, __LINE__);
+    }
+    else if (g_GameSettings.core32Bit)
+    {
+        m_Assembler.CmpConstToVariable(&m_Reg.m_GPR[m_Opcode.rs].W[0], CRegName::GPR_Lo[m_Opcode.rs], 0);
+        if (m_Section->m_Jump.FallThrough)
+        {
+            m_Section->m_Cont.LinkLocation = m_Assembler.newLabel();
+            m_Assembler.JgLabel(m_Section->m_Cont.BranchLabel.c_str(), m_Section->m_Cont.LinkLocation);
+        }
+        else if (m_Section->m_Cont.FallThrough)
+        {
+            m_Section->m_Jump.LinkLocation = m_Assembler.newLabel();
+            m_Assembler.JleLabel(m_Section->m_Jump.BranchLabel.c_str(), m_Section->m_Jump.LinkLocation);
+        }
+        else
+        {
+            m_Section->m_Cont.LinkLocation = m_Assembler.newLabel();
+            m_Assembler.JgLabel(m_Section->m_Cont.BranchLabel.c_str(), m_Section->m_Cont.LinkLocation);
+            m_Section->m_Jump.LinkLocation = m_Assembler.newLabel();
+            m_Assembler.JmpLabel(m_Section->m_Jump.BranchLabel.c_str(), m_Section->m_Jump.LinkLocation);
+        }
+    }
+    else
+    {
+        g_Notify->BreakPoint(__FILE__, __LINE__);
+    }
 }
 
 void CX64RecompilerOps::BLTZ_Compare()
@@ -802,15 +834,32 @@ void CX64RecompilerOps::ORI()
         m_RegWorkingSet.SetMipsRegState(m_Opcode.rt, m_RegWorkingSet.GetMipsRegState(m_Opcode.rs));
         m_RegWorkingSet.SetMipsRegHi(m_Opcode.rt, m_RegWorkingSet.GetMipsRegHi(m_Opcode.rs));
         m_RegWorkingSet.SetMipsRegLo(m_Opcode.rt, m_RegWorkingSet.GetMipsRegLo(m_Opcode.rs) | m_Opcode.immediate);
-
-        if (g_GameSettings.fastSP && m_Opcode.rt == 29 && m_Opcode.rs != 29)
+    }
+    else if (m_RegWorkingSet.IsMapped(m_Opcode.rs))
+    {
+        if (g_GameSettings.core32Bit)
+        {
+            m_RegWorkingSet.Map_GPR_32bit(m_Opcode.rt, true, m_Opcode.rs);
+            m_Assembler.or_(m_RegWorkingSet.GetMipsRegMap(m_Opcode.rt).r32(), m_Opcode.immediate);
+        }
+        else if (m_RegWorkingSet.Is64Bit(m_Opcode.rs))
         {
             g_Notify->BreakPoint(__FILE__, __LINE__);
         }
-        return;
+        else
+        {
+            g_Notify->BreakPoint(__FILE__, __LINE__);
+        }
+    }
+    else
+    {
+        g_Notify->BreakPoint(__FILE__, __LINE__);
     }
 
-    g_Notify->BreakPoint(__FILE__, __LINE__);
+    if (g_GameSettings.fastSP && m_Opcode.rt == 29 && m_Opcode.rs != 29)
+    {
+        g_Notify->BreakPoint(__FILE__, __LINE__);
+    }
 }
 
 void CX64RecompilerOps::XORI()
@@ -1218,7 +1267,54 @@ void CX64RecompilerOps::SDR()
 
 void CX64RecompilerOps::CACHE()
 {
-    g_Notify->BreakPoint(__FILE__, __LINE__);
+    if (g_Settings->LoadDword(Game_SMM_Cache) == 0)
+    {
+        return;
+    }
+
+    switch (m_Opcode.rt)
+    {
+    case 0:
+    case 16:
+        m_RegWorkingSet.BeforeCallDirect();
+        if (m_RegWorkingSet.IsConst(m_Opcode.base))
+        {
+            const uint32_t Address = m_RegWorkingSet.GetMipsRegLo(m_Opcode.base) + (int16_t)m_Opcode.offset;
+            m_Assembler.mov(asmjit::x86::edx, Address);
+        }
+        else if (m_RegWorkingSet.IsMapped(m_Opcode.base))
+        {
+            m_Assembler.lea(asmjit::x86::edx, asmjit::x86::dword_ptr(m_RegWorkingSet.GetMipsRegMap(m_Opcode.base).r32(), (int32_t)(int16_t)m_Opcode.offset));
+        }
+        else
+        {
+            m_Assembler.MoveVariableToX64reg(asmjit::x86::edx, &m_Reg.m_GPR[m_Opcode.base].UW[0], CRegName::GPR_Lo[m_Opcode.base], false);
+            m_Assembler.add(asmjit::x86::edx, (int32_t)(int16_t)m_Opcode.offset);
+        }
+        m_Assembler.mov(asmjit::x86::r8d, 0x20);
+        m_Assembler.mov(asmjit::x86::r9d, (uint32_t)CRecompiler::Remove_Cache);
+        m_Assembler.sub(asmjit::x86::rsp, 32);
+        m_Assembler.CallThis(m_Recompiler, MemberFuncAddress(&CRecompiler::ClearRecompCode_Virt), "CRecompiler::ClearRecompCode_Virt");
+        m_Assembler.add(asmjit::x86::rsp, 32);
+        m_RegWorkingSet.AfterCallDirect();
+        break;
+    case 1:
+    case 3:
+    case 13:
+    case 5:
+    case 8:
+    case 9:
+    case 17:
+    case 21:
+    case 25:
+        break;
+    default:
+        if (g_DebugSettings.haveDebugger)
+        {
+            g_Notify->DisplayError(stdstr_f("cache: %d", m_Opcode.rt).c_str());
+        }
+        break;
+    }
 }
 
 void CX64RecompilerOps::LL()
@@ -1272,7 +1368,24 @@ void CX64RecompilerOps::SPECIAL_SLL()
 
 void CX64RecompilerOps::SPECIAL_SRL()
 {
-    g_Notify->BreakPoint(__FILE__, __LINE__);
+    if (m_Opcode.rd == 0)
+    {
+        return;
+    }
+
+    if (m_RegWorkingSet.IsConst(m_Opcode.rt))
+    {
+        if (m_RegWorkingSet.IsMapped(m_Opcode.rd))
+        {
+            m_RegWorkingSet.UnMap_GPR(m_Opcode.rd, false);
+        }
+        m_RegWorkingSet.SetMipsRegLo(m_Opcode.rd, m_RegWorkingSet.GetMipsRegLo(m_Opcode.rt) >> m_Opcode.sa);
+        m_RegWorkingSet.SetMipsRegState(m_Opcode.rd, CRegInfo::STATE_CONST_32_SIGN);
+    }
+    else
+    {
+        g_Notify->BreakPoint(__FILE__, __LINE__);
+    }
 }
 
 void CX64RecompilerOps::SPECIAL_SRA()
@@ -1835,8 +1948,8 @@ void CX64RecompilerOps::SPECIAL_OR()
     }
     else if (m_RegWorkingSet.IsKnown(m_Opcode.rt) || m_RegWorkingSet.IsKnown(m_Opcode.rs))
     {
-        const int KnownReg = m_RegWorkingSet.IsKnown(m_Opcode.rt) ? m_Opcode.rt : m_Opcode.rs;
-        const int UnknownReg = m_RegWorkingSet.IsKnown(m_Opcode.rt) ? m_Opcode.rs : m_Opcode.rt;
+        const uint32_t KnownReg = m_RegWorkingSet.IsKnown(m_Opcode.rt) ? m_Opcode.rt : m_Opcode.rs;
+        const uint32_t UnknownReg = m_RegWorkingSet.IsKnown(m_Opcode.rt) ? m_Opcode.rs : m_Opcode.rt;
 
         if (m_RegWorkingSet.IsConst(KnownReg))
         {
@@ -1844,7 +1957,27 @@ void CX64RecompilerOps::SPECIAL_OR()
         }
         else
         {
-            g_Notify->BreakPoint(__FILE__, __LINE__);
+            m_RegWorkingSet.ProtectGPR(KnownReg);
+            if (KnownReg == m_Opcode.rd)
+            {
+                if (g_GameSettings.core32Bit)
+                {
+                    g_Notify->BreakPoint(__FILE__, __LINE__);
+                }
+                else
+                {
+                    g_Notify->BreakPoint(__FILE__, __LINE__);
+                }
+            }
+            else if (g_GameSettings.core32Bit)
+            {
+                m_RegWorkingSet.Map_GPR_32bit(m_Opcode.rd, true, UnknownReg);
+                m_Assembler.or_(m_RegWorkingSet.GetMipsRegMap(m_Opcode.rd).r32(), m_RegWorkingSet.GetMipsRegMap(KnownReg).r32());
+            }
+            else
+            {
+                g_Notify->BreakPoint(__FILE__, __LINE__);
+            }
         }
     }
     else
@@ -2131,7 +2264,14 @@ void CX64RecompilerOps::COP0_CO_TLBR()
 
 void CX64RecompilerOps::COP0_CO_TLBWI()
 {
-    g_Notify->BreakPoint(__FILE__, __LINE__);
+    m_RegWorkingSet.BeforeCallDirect();
+    m_Assembler.MoveVariableToX64reg(asmjit::x86::edx, &m_Reg.INDEX_REGISTER, "INDEX_REGISTER", false);
+    m_Assembler.and_(asmjit::x86::edx, 0x1F);
+    m_Assembler.xor_(asmjit::x86::r8d, asmjit::x86::r8d);
+    m_Assembler.sub(asmjit::x86::rsp, 32);
+    m_Assembler.CallThis(&m_TLB, MemberFuncAddress(&CTLB::WriteEntry), "CTLB::WriteEntry");
+    m_Assembler.add(asmjit::x86::rsp, 32);
+    m_RegWorkingSet.AfterCallDirect();
 }
 
 void CX64RecompilerOps::COP0_CO_TLBWR()
@@ -2190,7 +2330,28 @@ void CX64RecompilerOps::COP1_DMT()
 
 void CX64RecompilerOps::COP1_CT()
 {
-    g_Notify->BreakPoint(__FILE__, __LINE__);
+    CompileCop1Test();
+
+    if (m_Opcode.fs != 31)
+    {
+        return;
+    }
+
+    if (m_RegWorkingSet.IsConst(m_Opcode.rt))
+    {
+        g_Notify->BreakPoint(__FILE__, __LINE__);
+    }
+    else if (m_RegWorkingSet.IsMapped(m_Opcode.rt))
+    {
+        g_Notify->BreakPoint(__FILE__, __LINE__);
+    }
+    else
+    {
+        const asmjit::x86::Gp TempReg = m_RegWorkingSet.Map_TempReg(asmjit::x86::Gpd(), m_Opcode.rt);
+        m_Assembler.and_(TempReg.r32(), 0x183FFFFu);
+        m_Assembler.MovDwordToVariable(&m_Reg.m_FPCR[m_Opcode.fs], CRegName::FPR_Ctrl[m_Opcode.fs], TempReg);
+    }
+    m_RegWorkingSet.SetRoundingModel(CRegBase::RoundUnknown);
 }
 
 void CX64RecompilerOps::COP1_S_ADD()
@@ -2562,8 +2723,6 @@ void CX64RecompilerOps::CompileExit(uint32_t JumpPC, uint32_t TargetPC, CRegInfo
         const stdstr ExitName = stdstr_f("Exit_%08X_%d", JumpPC, m_ExitLabelCount++);
         (m_Assembler.*x64Jmp)(ExitName.c_str(), ExitLabel);
         m_Assembler.EnterSecondarySection();
-        m_CodeBlock.Log("");
-        m_CodeBlock.Log("      %s:", ExitName.c_str());
         m_Assembler.bind(ExitLabel);
         CompileExit((uint32_t)-1, TargetPC, ExitRegSet, reason, nullptr, BadVAddrReg);
         m_Assembler.EnterPrimarySection();
@@ -2757,25 +2916,38 @@ void CX64RecompilerOps::UpdateCounters(CRegInfo & RegSet, bool CheckTimer, bool 
 
     if (CheckTimer)
     {
-        asmjit::Label TimerDonePath = m_Assembler.newLabel();
         asmjit::Label ContinueFromTimerTest = m_Assembler.newLabel();
-        m_Assembler.JsLabel("Timer_Done_Path", TimerDonePath);
+        const bool InSecondary = m_Assembler.InSecondarySection();
 
-        m_Assembler.EnterSecondarySection();
-        m_CodeBlock.Log("      Timer_Done_Path:");
-        m_Assembler.bind(TimerDonePath);
+        if (InSecondary)
+        {
+            m_Assembler.JnsLabel("Continue_From_Timer_Test", ContinueFromTimerTest);
+        }
+        else
+        {
+            asmjit::Label TimerDonePath = m_Assembler.newLabel();
+            m_Assembler.JsLabel("Timer_Done_Path", TimerDonePath);
+            m_CodeBlock.Log("");
+            m_Assembler.bind(ContinueFromTimerTest);
+            m_Assembler.EnterSecondarySection();
+            m_Assembler.bind(TimerDonePath);
+        }
 
         RegSet.BeforeCallDirect();
         m_Assembler.sub(asmjit::x86::rsp, 32);
         m_Assembler.CallThis(g_SystemTimer, MemberFuncAddress(&CSystemTimer::TimerDone), "CSystemTimer::TimerDone");
         m_Assembler.add(asmjit::x86::rsp, 32);
         RegSet.AfterCallDirect();
-        m_Assembler.jmp(ContinueFromTimerTest);
 
-        m_Assembler.EnterPrimarySection();
-
-        m_CodeBlock.Log("");
-        m_Assembler.bind(ContinueFromTimerTest);
+        if (InSecondary)
+        {
+            m_Assembler.bind(ContinueFromTimerTest);
+        }
+        else
+        {
+            m_Assembler.JmpLabel("Continue_From_Timer_Test", ContinueFromTimerTest);
+            m_Assembler.EnterPrimarySection();
+        }
     }
 
     if ((UpdateTimer || g_GameSettings.overClockModifier != 1) && g_SyncSystem)
@@ -2848,6 +3020,23 @@ bool CX64RecompilerOps::LW_KnownAddress(const asmjit::x86::Gp & Reg, uint32_t VA
 
     switch (PAddr & 0xFFF00000u)
     {
+    case 0x00000000u:
+    case 0x00100000u:
+    case 0x00200000u:
+    case 0x00300000u:
+    case 0x00400000u:
+    case 0x00500000u:
+    case 0x00600000u:
+    case 0x00700000u:
+        if (PAddr < m_MMU.RdramSize())
+        {
+            m_Assembler.MoveVariableToX64reg(Reg, m_MMU.Rdram() + PAddr, stdstr_f("RDRAM + 0x%X", PAddr).c_str(), ResultSigned);
+        }
+        else
+        {
+            m_Assembler.xor_(Reg, Reg);
+        }
+        return false;
     case 0x04000000u:
         if (PAddr < 0x04001000u)
         {
@@ -2898,6 +3087,19 @@ bool CX64RecompilerOps::LW_KnownAddress(const asmjit::x86::Gp & Reg, uint32_t VA
         case 0x04600028u: m_Assembler.MoveVariableToX64reg(Reg, &m_Reg.PI_BSD_DOM2_PWD_REG, "PI_BSD_DOM2_PWD_REG", ResultSigned); break;
         case 0x0460002Cu: m_Assembler.MoveVariableToX64reg(Reg, &m_Reg.PI_BSD_DOM2_PGS_REG, "PI_BSD_DOM2_PGS_REG", ResultSigned); break;
         case 0x04600030u: m_Assembler.MoveVariableToX64reg(Reg, &m_Reg.PI_BSD_DOM2_RLS_REG, "PI_BSD_DOM2_RLS_REG", ResultSigned); break;
+        default:
+            m_Assembler.xor_(Reg, Reg);
+            if (g_DebugSettings.breakOnUnhandledMemory)
+            {
+                g_Notify->BreakPoint(__FILE__, __LINE__);
+            }
+            break;
+        }
+        return false;
+    case 0x04800000u:
+        switch (PAddr)
+        {
+        case 0x04800018u: m_Assembler.MoveVariableToX64reg(Reg, &m_Reg.SI_STATUS_REG, "SI_STATUS_REG", ResultSigned); break;
         default:
             m_Assembler.xor_(Reg, Reg);
             if (g_DebugSettings.breakOnUnhandledMemory)
