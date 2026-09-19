@@ -9,6 +9,8 @@
 
 namespace
 {
+static constexpr uint32_t kX64ScratchRegId = asmjit::x86::Gp::kIdR11;
+
 static constexpr uint32_t kX64AllocatableRegIds[] = {
     asmjit::x86::Gp::kIdBx,
     asmjit::x86::Gp::kIdR12,
@@ -24,7 +26,6 @@ static constexpr uint32_t kX64AllocatableRegIds[] = {
     asmjit::x86::Gp::kIdR8,
     asmjit::x86::Gp::kIdR9,
     asmjit::x86::Gp::kIdR10,
-    asmjit::x86::Gp::kIdR11,
 };
 static constexpr uint32_t kX64AllocatableRegCount = sizeof(kX64AllocatableRegIds) / sizeof(kX64AllocatableRegIds[0]);
 asmjit::x86::Gp GetX64RegFromPhysId(uint32_t PhysId, asmjit::RegType RegType = asmjit::RegType::kX86_Gpq)
@@ -340,7 +341,7 @@ bool CX64RegInfo::UnMap_X64reg(const asmjit::x86::Gp & Reg)
                 continue;
             }
 
-            if (GetMipsRegMap(i) == Reg)
+            if (GetMipsRegMap(i).id() == RegIndex)
             {
                 if (!GetX64Protected(RegIndex))
                 {
@@ -397,7 +398,27 @@ void CX64RegInfo::Map_GPR_64bit(int32_t MipsReg, int32_t MipsRegToLoad)
     }
     else
     {
-        g_Notify->BreakPoint(__FILE__, __LINE__);
+        Reg = GetMipsRegMap(MipsReg);
+        if (Is32Bit(MipsReg))
+        {
+            Reg = asmjit::x86::Gpq(Reg.id());
+            if (MipsReg == MipsRegToLoad)
+            {
+                if (IsSigned(MipsReg))
+                {
+                    m_Assembler.movsxd(Reg, GetMipsRegMap(MipsReg).r32());
+                }
+                else
+                {
+                    m_Assembler.mov(Reg.r32(), GetMipsRegMap(MipsReg).r32());
+                }
+            }
+        }
+        else
+        {
+            Reg = Reg.r64();
+        }
+        SetX64Protected(Reg.id(), true);
     }
 
     for (int i = 0; i < x64PhysRegCount; i++)
@@ -503,7 +524,6 @@ asmjit::x86::Gp CX64RegInfo::Map_TempReg(asmjit::x86::Gp Reg, int32_t MipsReg, a
             asmjit::x86::Gp::kIdR8,
             asmjit::x86::Gp::kIdR9,
             asmjit::x86::Gp::kIdR10,
-            asmjit::x86::Gp::kIdR11,
         };
         for (size_t k = 0; k < sizeof(prefer) / sizeof(prefer[0]); k++)
         {
@@ -901,7 +921,7 @@ asmjit::x86::Gp CX64RegInfo::FreeX64Reg(asmjit::RegType RegType)
         {
             if (RegType == asmjit::RegType::kX86_Gpd)
             {
-                return asmjit::x86::Gpq(kX64AllocatableRegIds[k]);
+                return asmjit::x86::Gpd(kX64AllocatableRegIds[k]);
             }
             return GetX64RegFromPhysId(physId, RegType);
         }
@@ -943,7 +963,11 @@ asmjit::x86::Gp CX64RegInfo::FreeX64Reg(asmjit::RegType RegType)
     {
         if (MapCount[i] > 0 && GetX64Mapped(MapReg[i]) != Stack_Mapped)
         {
-            asmjit::x86::Gp Reg = GetX64RegFromPhysId(MapReg[i], RegType);
+            if (GetX64Protected(MapReg[i]))
+            {
+                continue;
+            }
+            Reg = GetX64RegFromPhysId(MapReg[i], RegType);
             if (UnMap_X64reg(Reg))
             {
                 return Reg;
@@ -955,11 +979,11 @@ asmjit::x86::Gp CX64RegInfo::FreeX64Reg(asmjit::RegType RegType)
         }
     }
 
-    if (StackReg.isValid() && UnMap_X64reg(StackReg))
+    if (StackReg.isValid() && !GetX64Protected(StackReg.id()) && UnMap_X64reg(StackReg))
     {
         return StackReg;
     }
-
+    g_Notify->BreakPoint(__FILE__, __LINE__);
     return asmjit::x86::Gp();
 }
 

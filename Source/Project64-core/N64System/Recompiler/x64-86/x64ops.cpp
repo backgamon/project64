@@ -210,7 +210,8 @@ void CX64Ops::CmpConstToVariable(void * Variable, const char * VariableName, uin
     }
     else
     {
-        g_Notify->BreakPoint(__FILE__, __LINE__);
+        mov(asmjit::x86::r11, (uintptr_t)Variable);
+        cmp(asmjit::x86::dword_ptr(asmjit::x86::r11), Const);
     }
 }
 
@@ -223,7 +224,8 @@ void CX64Ops::CmpRegToVariable(const asmjit::x86::Gp & Reg, void * Variable, con
     }
     else
     {
-        g_Notify->BreakPoint(__FILE__, __LINE__);
+        mov(asmjit::x86::r11, (uintptr_t)Variable);
+        cmp(Reg.r32(), asmjit::x86::dword_ptr(asmjit::x86::r11));
     }
 }
 
@@ -233,6 +235,36 @@ void CX64Ops::MoveConstToVariable(void * Variable, const char * VariableName, ui
     if (asmjit::Support::isUInt32((uintptr_t)Variable))
     {
         mov(asmjit::x86::dword_ptr_abs((uintptr_t)Variable), Const);
+    }
+    else
+    {
+        mov(asmjit::x86::r11, (uintptr_t)Variable);
+        mov(asmjit::x86::dword_ptr(asmjit::x86::r11), Const);
+    }
+}
+
+void CX64Ops::MoveConst64ToVariable(void * Variable, const char * VariableName, uint64_t Const)
+{
+    AddNumberSymbol((uintptr_t)Variable, VariableName);
+    const bool Imm32Fits = Const == (uint64_t)(int64_t)(int32_t)Const;
+    if (asmjit::Support::isUInt32((uintptr_t)Variable))
+    {
+        if (Imm32Fits)
+        {
+            mov(asmjit::x86::qword_ptr_abs((uintptr_t)Variable), static_cast<uint32_t>(Const));
+        }
+        else
+        {
+            push(asmjit::x86::rax);
+            mov(asmjit::x86::rax, Const);
+            mov(asmjit::x86::qword_ptr_abs((uintptr_t)Variable), asmjit::x86::rax);
+            pop(asmjit::x86::rax);
+        }
+    }
+    else if (Imm32Fits)
+    {
+        mov(asmjit::x86::r11, (uintptr_t)Variable);
+        mov(asmjit::x86::qword_ptr(asmjit::x86::r11), static_cast<uint32_t>(Const));
     }
     else
     {
@@ -269,7 +301,8 @@ void CX64Ops::MoveVariable64ToX64reg(const asmjit::x86::Gp & Reg, void * Variabl
     }
     else
     {
-        g_Notify->BreakPoint(__FILE__, __LINE__);
+        mov(Reg.r64(), (uintptr_t)Variable);
+        mov(Reg.r64(), asmjit::x86::qword_ptr(Reg.r64()));
     }
 }
 
@@ -289,7 +322,8 @@ void CX64Ops::MovDwordToVariable(void * Variable, const char * VariableName, con
     }
     else
     {
-        g_Notify->BreakPoint(__FILE__, __LINE__);
+        mov(asmjit::x86::r11, (uintptr_t)Variable);
+        mov(asmjit::x86::dword_ptr(asmjit::x86::r11), Src.r32());
     }
 }
 
@@ -302,7 +336,8 @@ void CX64Ops::MovQwordToVariable(void * Variable, const char * VariableName, con
     }
     else
     {
-        g_Notify->BreakPoint(__FILE__, __LINE__);
+        mov(asmjit::x86::r11, (uintptr_t)Variable);
+        mov(asmjit::x86::qword_ptr(asmjit::x86::r11), Src.r64());
     }
 }
 
@@ -315,7 +350,8 @@ void CX64Ops::AddDwordFromVariable(const asmjit::x86::Gp & Reg, void * Variable,
     }
     else
     {
-        g_Notify->BreakPoint(__FILE__, __LINE__);
+        mov(asmjit::x86::r11, (uintptr_t)Variable);
+        add(Reg.r32(), asmjit::x86::dword_ptr(asmjit::x86::r11));
     }
 }
 
@@ -328,7 +364,8 @@ void CX64Ops::SubVariableFromX64reg(const asmjit::x86::Gp & Reg, void * Variable
     }
     else
     {
-        g_Notify->BreakPoint(__FILE__, __LINE__);
+        mov(asmjit::x86::r11, (uintptr_t)Variable);
+        sub(Reg.r32(), asmjit::x86::dword_ptr(asmjit::x86::r11));
     }
 }
 
@@ -341,7 +378,8 @@ void CX64Ops::SubConstFromVariable(uint32_t Const, void * Variable, const char *
     }
     else
     {
-        g_Notify->BreakPoint(__FILE__, __LINE__);
+        mov(asmjit::x86::r11, (uintptr_t)Variable);
+        sub(asmjit::x86::dword_ptr(asmjit::x86::r11), Const);
     }
 }
 
@@ -355,6 +393,20 @@ void CX64Ops::AndConstToVariable(void * Variable, const char * VariableName, uin
     else
     {
         g_Notify->BreakPoint(__FILE__, __LINE__);
+    }
+}
+
+void CX64Ops::OrVariableToX64reg(const asmjit::x86::Gp & Reg, void * Variable, const char * VariableName)
+{
+    AddNumberSymbol((uintptr_t)Variable, VariableName);
+    if (asmjit::Support::isUInt32((uintptr_t)Variable))
+    {
+        or_(Reg.r32(), asmjit::x86::dword_ptr_abs((uintptr_t)Variable));
+    }
+    else
+    {
+        mov(asmjit::x86::r11, (uintptr_t)Variable);
+        or_(Reg.r32(), asmjit::x86::dword_ptr(asmjit::x86::r11));
     }
 }
 

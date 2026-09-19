@@ -243,7 +243,10 @@ private:
 
     bool LW_KnownAddress(const asmjit::x86::Gp & Reg, uint32_t VAddr, bool ResultSigned);
     void SW_KnownAddress(uint32_t VAddr, const asmjit::x86::Gp * ValueReg, uint32_t ValueConst);
+    void CompileLoadMemoryValue(asmjit::x86::Gp & AddressReg, const asmjit::x86::Gp & ValueReg, const asmjit::x86::Gp & ValueRegHi, uint8_t ValueSize, bool SignExtend);
+    void CompileStoreMemoryValue(asmjit::x86::Gp AddressReg, const asmjit::x86::Gp & ValueReg, const asmjit::x86::Gp & ValueRegHi, uint64_t Value, uint8_t ValueSize);
     asmjit::x86::Gp BaseOffsetAddress(bool UseBaseRegister);
+    void ResetMemoryStack(void);
     void ExitCodeBlock(void);
     void UpdateSyncCPU(CRegInfo & RegSet, uint32_t Cycles);
     void CompileCop1Test();
@@ -254,6 +257,7 @@ private:
     CX64Ops m_Assembler;
     CMipsMemoryVM & m_MMU;
     PIPELINE_STAGE m_PipelineStage;
+    CX64RegInfo m_RegBeforeDelay;
     bool m_EffectDelaySlot;
     const uint32_t & m_CompilePC;
     uint32_t m_ColdEntryOffset;
@@ -261,6 +265,7 @@ private:
     uint32_t m_ExitLabelCount;
 
     static uint32_t m_TempValue32;
+    static uint64_t m_TempValue64;
 };
 
 typedef CX64RecompilerOps CRecompilerOps;
