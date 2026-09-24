@@ -1602,7 +1602,28 @@ void CX64RecompilerOps::SD()
     }
     else
     {
-        g_Notify->BreakPoint(__FILE__, __LINE__);
+        asmjit::x86::Gp ValueReg;
+        if (!m_RegWorkingSet.IsConst(m_Opcode.rt))
+        {
+            if (m_RegWorkingSet.IsMapped(m_Opcode.rt))
+            {
+                m_RegWorkingSet.ProtectGPR(m_Opcode.rt);
+            }
+            if (m_RegWorkingSet.IsUnknown(m_Opcode.rt) || !m_RegWorkingSet.Is64Bit(m_Opcode.rt))
+            {
+                ValueReg = m_RegWorkingSet.Map_TempReg(asmjit::x86::Gpq(), m_Opcode.rt, asmjit::RegType::kX86_Gpq);
+            }
+            else
+            {
+                ValueReg = m_RegWorkingSet.GetMipsRegMap(m_Opcode.rt);
+            }
+        }
+        uint64_t RtValue = 0;
+        if (m_RegWorkingSet.IsConst(m_Opcode.rt))
+        {
+            RtValue = ((uint64_t)(m_RegWorkingSet.Is64Bit(m_Opcode.rt) ? m_RegWorkingSet.GetMipsRegHi(m_Opcode.rt) : (uint32_t)(m_RegWorkingSet.GetMipsRegLo_S(m_Opcode.rt) >> 31)) << 32) | m_RegWorkingSet.GetMipsRegLo(m_Opcode.rt);
+        }
+        CompileStoreMemoryValue(asmjit::x86::Gp(), ValueReg, asmjit::x86::Gp(), RtValue, 64);
     }
 }
 
@@ -4133,6 +4154,11 @@ void CX64RecompilerOps::CompileStoreMemoryValue(asmjit::x86::Gp AddressReg, cons
         m_Assembler.test(AddressReg.r32(), 1);
         CompileExit(m_CompilePC, m_CompilePC, ExitRegSet, ExitReason_AddressErrorExceptionWrite32, &CX64Ops::JneLabel, &AddressReg);
     }
+    else if (ValueSize == 64)
+    {
+        m_Assembler.test(AddressReg.r32(), 7);
+        CompileExit(m_CompilePC, m_CompilePC, ExitRegSet, ExitReason_AddressErrorExceptionWrite32, &CX64Ops::JneLabel, &AddressReg);
+    }
     else if (ValueSize != 8)
     {
         g_Notify->BreakPoint(__FILE__, __LINE__);
@@ -4166,6 +4192,20 @@ void CX64RecompilerOps::CompileStoreMemoryValue(asmjit::x86::Gp AddressReg, cons
             m_Assembler.mov(asmjit::x86::word_ptr(AddressReg, HostOffsetReg), ValueReg.r16());
         }
     }
+    else if (ValueSize == 64)
+    {
+        const asmjit::x86::Gp StoreReg = m_RegWorkingSet.Map_TempReg(asmjit::x86::Gpq(), -1, asmjit::RegType::kX86_Gpq);
+        if (!ValueReg.isValid())
+        {
+            m_Assembler.MoveConstToX64reg(StoreReg, (Value << 32) | (Value >> 32));
+        }
+        else
+        {
+            m_Assembler.mov(StoreReg.r64(), ValueReg.r64());
+            m_Assembler.ror(StoreReg.r64(), 32);
+        }
+        m_Assembler.mov(asmjit::x86::qword_ptr(AddressReg, HostOffsetReg), StoreReg.r64());
+    }
     else
     {
         g_Notify->BreakPoint(__FILE__, __LINE__);
@@ -4198,6 +4238,19 @@ void CX64RecompilerOps::CompileStoreMemoryValue(asmjit::x86::Gp AddressReg, cons
         }
         FunctPtr = MemberFuncAddress(&CMipsMemoryVM::SH_VAddr32);
         FunctName = "CMipsMemoryVM::SH_VAddr32";
+    }
+    else if (ValueSize == 64)
+    {
+        if (!ValueReg.isValid())
+        {
+            m_Assembler.MoveConstToX64reg(asmjit::x86::r8, Value);
+        }
+        else
+        {
+            m_Assembler.mov(asmjit::x86::r8, ValueReg.r64());
+        }
+        FunctPtr = MemberFuncAddress(&CMipsMemoryVM::SD_VAddr32);
+        FunctName = "CMipsMemoryVM::SD_VAddr32";
     }
     else
     {
