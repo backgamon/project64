@@ -1224,7 +1224,21 @@ void CX64RecompilerOps::LW()
 
 void CX64RecompilerOps::LBU()
 {
-    g_Notify->BreakPoint(__FILE__, __LINE__);
+    if (m_Opcode.rt == 0)
+    {
+        return;
+    }
+
+    if (m_RegWorkingSet.IsConst(m_Opcode.base))
+    {
+        g_Notify->BreakPoint(__FILE__, __LINE__);
+    } 
+    else
+    {
+        m_RegWorkingSet.Map_GPR_32bit(m_Opcode.rt, false, m_Opcode.base == m_Opcode.rt ? m_Opcode.rt : -1);
+        asmjit::x86::Gp AddressReg;
+        CompileLoadMemoryValue(AddressReg, m_RegWorkingSet.GetMipsRegMap(m_Opcode.rt), asmjit::x86::Gp(), 8, false);
+    }
 }
 
 void CX64RecompilerOps::LHU()
@@ -3984,7 +3998,7 @@ void CX64RecompilerOps::CompileLoadMemoryValue(asmjit::x86::Gp & AddressReg, con
     }
 
     CRegInfo ExitRegSet = m_RegWorkingSet.WithAddedCycles(g_GameSettings.countPerOp);
-    if (m_Instruction.WritesGPR() > 0)
+    if (m_Instruction.WritesGPR() > 0 && ValueReg.isValid())
     {
         ExitRegSet.UnMap_GPR(m_Opcode.rt, false);
     }
@@ -4039,7 +4053,18 @@ void CX64RecompilerOps::CompileLoadMemoryValue(asmjit::x86::Gp & AddressReg, con
     else
     {
         m_Assembler.xor_(AddressReg.r32(), ValueSize == 8 ? 3 : 2);
-        if (ValueSize == 16)
+        if (ValueSize == 8)
+        {
+            if (SignExtend)
+            {
+                m_Assembler.movsx(DestReg.r32(), asmjit::x86::byte_ptr(AddressReg, HostOffsetReg));
+            }
+            else
+            {
+                m_Assembler.movzx(DestReg.r32(), asmjit::x86::byte_ptr(AddressReg, HostOffsetReg));
+            }
+        }
+        else if (ValueSize == 16)
         {
             if (SignExtend)
             {
@@ -4121,7 +4146,11 @@ void CX64RecompilerOps::CompileLoadMemoryValue(asmjit::x86::Gp & AddressReg, con
         m_Assembler.MoveVariableToX64reg(DestReg, &m_TempValue32, "TempValue32", false);
         if (SignExtend)
         {
-            if (ValueSize == 16)
+            if (ValueSize == 8)
+            {
+                m_Assembler.movsx(DestReg.r32(), DestReg.r8Lo());
+            }
+            else if (ValueSize == 16)
             {
                 m_Assembler.movsx(DestReg.r32(), DestReg.r16());
             }
@@ -4202,7 +4231,19 @@ void CX64RecompilerOps::CompileStoreMemoryValue(asmjit::x86::Gp AddressReg, cons
     asmjit::Label SlowPath = m_Assembler.newLabel();
     m_Assembler.JeLabel(MapMissLabel.c_str(), SlowPath);
 
-    if (ValueSize == 16)
+    if (ValueSize == 8)
+    {
+        m_Assembler.xor_(AddressReg.r32(), 3);
+        if (!ValueReg.isValid())
+        {
+            m_Assembler.mov(asmjit::x86::byte_ptr(AddressReg, HostOffsetReg), (uint8_t)(Value & 0xFF));
+        }
+        else
+        {
+            m_Assembler.mov(asmjit::x86::byte_ptr(AddressReg, HostOffsetReg), ValueReg.r8Lo());
+        }
+    }
+    else if (ValueSize == 16)
     {
         m_Assembler.xor_(AddressReg.r32(), 2);
         if (!ValueReg.isValid())
@@ -4248,7 +4289,20 @@ void CX64RecompilerOps::CompileStoreMemoryValue(asmjit::x86::Gp AddressReg, cons
     m_Assembler.mov(asmjit::x86::edx, AddressReg.r32());
     uintptr_t FunctPtr = 0;
     const char * FunctName = nullptr;
-    if (ValueSize == 16)
+    if (ValueSize == 8)
+    {
+        if (!ValueReg.isValid())
+        {
+            m_Assembler.mov(asmjit::x86::r8d, (uint32_t)(Value & 0xFF));
+        }
+        else
+        {
+            m_Assembler.mov(asmjit::x86::r8d, ValueReg.r32());
+        }
+        FunctPtr = MemberFuncAddress(&CMipsMemoryVM::SB_VAddr32);
+        FunctName = "CMipsMemoryVM::SB_VAddr32";
+    }
+    else if (ValueSize == 16)
     {
         if (!ValueReg.isValid())
         {
