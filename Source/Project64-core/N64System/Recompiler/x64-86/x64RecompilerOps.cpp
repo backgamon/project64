@@ -3598,6 +3598,22 @@ bool CX64RecompilerOps::LW_KnownAddress(const asmjit::x86::Gp & Reg, uint32_t VA
             }
         }
         return false;
+    case 0x04300000u:
+        switch (PAddr)
+        {
+        case 0x04300000u: m_Assembler.MoveVariableToX64reg(Reg, &m_Reg.MI_MODE_REG, "MI_MODE_REG", ResultSigned); break;
+        case 0x04300004u: m_Assembler.MoveVariableToX64reg(Reg, &m_Reg.MI_VERSION_REG, "MI_VERSION_REG", ResultSigned); break;
+        case 0x04300008u: m_Assembler.MoveVariableToX64reg(Reg, &m_Reg.MI_INTR_REG, "MI_INTR_REG", ResultSigned); break;
+        case 0x0430000Cu: m_Assembler.MoveVariableToX64reg(Reg, &m_Reg.MI_INTR_MASK_REG, "MI_INTR_MASK_REG", ResultSigned); break;
+        default:
+            m_Assembler.xor_(Reg, Reg);
+            if (g_DebugSettings.breakOnUnhandledMemory)
+            {
+                g_Notify->BreakPoint(__FILE__, __LINE__);
+            }
+            break;
+        }
+        return false;
     case 0x04600000u:
         switch (PAddr)
         {
