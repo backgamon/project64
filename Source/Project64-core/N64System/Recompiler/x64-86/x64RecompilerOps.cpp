@@ -725,7 +725,46 @@ void CX64RecompilerOps::COP1_BCT_Compare()
 
 void CX64RecompilerOps::J()
 {
-    g_Notify->BreakPoint(__FILE__, __LINE__);
+    if (m_PipelineStage == PIPELINE_STAGE_NORMAL)
+    {
+        if ((m_CompilePC & 0xFFC) == 0xFFC)
+        {
+            g_Notify->BreakPoint(__FILE__, __LINE__);
+            return;
+        }
+        R4300iOpcode DelaySlot;
+        g_MMU->MemoryValue32((uint32_t)(m_CompilePC + 4), DelaySlot.Value);
+        if (R4300iInstruction(m_CompilePC + 4, DelaySlot.Value).HasDelaySlot())
+        {
+            g_Notify->BreakPoint(__FILE__, __LINE__);
+            return;
+        }
+
+        m_Section->m_Jump.TargetPC = (m_CompilePC & 0xF0000000) + (m_Opcode.target << 2);
+        m_Section->m_Jump.JumpPC = (uint32_t)(m_CompilePC);
+        if (m_Section->m_JumpSection != nullptr)
+        {
+            m_Section->m_Jump.BranchLabel = stdstr_f("Section_%d", ((CCodeSection *)m_Section->m_JumpSection)->m_SectionID);
+        }
+        else
+        {
+            m_Section->m_Jump.BranchLabel = "ExitBlock";
+        }
+        m_Section->m_Jump.FallThrough = true;
+        m_Section->m_Jump.LinkLocation = asmjit::Label();
+        m_Section->m_Jump.LinkLocation2 = asmjit::Label();
+        m_PipelineStage = PIPELINE_STAGE_DO_DELAY_SLOT;
+    }
+    else if (m_PipelineStage == PIPELINE_STAGE_DELAY_SLOT_DONE)
+    {
+        m_Section->m_Jump.RegSet = m_RegWorkingSet;
+        m_Section->GenerateSectionLinkage();
+        m_PipelineStage = PIPELINE_STAGE_END_BLOCK;
+    }
+    else if (g_DebugSettings.haveDebugger)
+    {
+        g_Notify->DisplayError(stdstr_f("WTF\n\nJ\nNextInstruction = %X", m_PipelineStage).c_str());
+    }
 }
 
 void CX64RecompilerOps::JAL()
