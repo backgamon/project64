@@ -1573,7 +1573,37 @@ void CX64RecompilerOps::SDC1()
 
 void CX64RecompilerOps::SD()
 {
-    g_Notify->BreakPoint(__FILE__, __LINE__);
+    if (m_RegWorkingSet.IsConst(m_Opcode.base))
+    {
+        const uint32_t Address = m_RegWorkingSet.GetMipsRegLo(m_Opcode.base) + (int16_t)m_Opcode.offset;
+        if (g_DebugSettings.haveWriteBP)
+        {
+            g_Notify->BreakPoint(__FILE__, __LINE__);
+            return;
+        }
+
+        if (m_RegWorkingSet.IsConst(m_Opcode.rt))
+        {
+            g_Notify->BreakPoint(__FILE__, __LINE__);
+        }
+        else if (m_RegWorkingSet.IsMapped(m_Opcode.rt))
+        {
+            g_Notify->BreakPoint(__FILE__, __LINE__);
+        }
+        else
+        {
+            asmjit::x86::Gp TempReg = m_RegWorkingSet.Map_TempReg(asmjit::x86::Gpq(), m_Opcode.rt, asmjit::RegType::kX86_Gpq);
+            asmjit::x86::Gp HiReg = m_RegWorkingSet.Map_TempReg(asmjit::x86::Gpd(), -1);
+            m_Assembler.mov(HiReg.r64(), TempReg.r64());
+            m_Assembler.shr(HiReg.r64(), 32);
+            SW_KnownAddress(Address, &HiReg, 0);
+            SW_KnownAddress(Address + 4, &TempReg, 0);
+        }
+    }
+    else
+    {
+        g_Notify->BreakPoint(__FILE__, __LINE__);
+    }
 }
 
 void CX64RecompilerOps::SPECIAL_SLL()
