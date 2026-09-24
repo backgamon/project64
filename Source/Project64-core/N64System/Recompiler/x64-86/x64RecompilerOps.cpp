@@ -3734,6 +3734,19 @@ bool CX64RecompilerOps::LW_KnownAddress(const asmjit::x86::Gp & Reg, uint32_t VA
             break;
         }
         return false;
+    case 0x04400000u:
+        UpdateCounters(m_RegWorkingSet, false, true);
+        m_RegWorkingSet.BeforeCallDirect();
+        m_Assembler.MoveConstToX64reg(asmjit::x86::rcx, reinterpret_cast<uintptr_t>(&m_MMU.m_VideoInterfaceHandler), "g_MMU->m_VideoInterfaceHandler");
+        m_Assembler.MoveConstToX64reg(asmjit::x86::rdx, PAddr & 0x1FFFFFFFu);
+        m_Assembler.MoveConstToX64reg(asmjit::x86::r8, (uintptr_t)&m_TempValue32, "m_TempValue32");
+        m_Assembler.sub(asmjit::x86::rsp, 32);
+        m_Assembler.mov(asmjit::x86::r11, asmjit::x86::qword_ptr(asmjit::x86::rcx));
+        m_Assembler.call(asmjit::x86::qword_ptr(asmjit::x86::r11));
+        m_Assembler.add(asmjit::x86::rsp, 32);
+        m_RegWorkingSet.AfterCallDirect();
+        m_Assembler.MoveVariableToX64reg(Reg, &m_TempValue32, "m_TempValue32", ResultSigned);
+        return false;
     case 0x04600000u:
         switch (PAddr)
         {
