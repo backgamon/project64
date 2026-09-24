@@ -2687,7 +2687,45 @@ void CX64RecompilerOps::SPECIAL_SLTU()
         }
         else
         {
-            g_Notify->BreakPoint(__FILE__, __LINE__);
+            if (m_RegWorkingSet.Is64Bit(m_Opcode.rt) || m_RegWorkingSet.Is64Bit(m_Opcode.rs))
+            {
+                g_Notify->BreakPoint(__FILE__, __LINE__);
+            }
+            else
+            {
+                const uint32_t Const = m_RegWorkingSet.IsConst(m_Opcode.rs) ? m_RegWorkingSet.GetMipsRegLo(m_Opcode.rs) : m_RegWorkingSet.GetMipsRegLo(m_Opcode.rt);
+                const uint32_t MappedReg = m_RegWorkingSet.IsConst(m_Opcode.rt) ? m_Opcode.rs : m_Opcode.rt;
+
+                m_RegWorkingSet.ProtectGPR(MappedReg);
+                const bool UseR11 = (m_Opcode.rd == MappedReg);
+                asmjit::x86::Gp Result8;
+                if (!UseR11)
+                {
+                    m_RegWorkingSet.Map_GPR_32bit(m_Opcode.rd, false, -1);
+                    const asmjit::x86::Gp & Rd = m_RegWorkingSet.GetMipsRegMap(m_Opcode.rd);
+                    m_Assembler.xor_(Rd.r32(), Rd.r32());
+                    Result8 = Rd.r8Lo();
+                }
+                else
+                {
+                    Result8 = asmjit::x86::r11.r8Lo();
+                }
+
+                m_Assembler.cmp(m_RegWorkingSet.GetMipsRegMap(MappedReg).r32(), Const);
+                if (MappedReg == m_Opcode.rs)
+                {
+                    m_Assembler.setb(Result8);
+                }
+                else
+                {
+                    m_Assembler.seta(Result8);
+                }
+                if (UseR11)
+                {
+                    m_RegWorkingSet.Map_GPR_32bit(m_Opcode.rd, false, -1);
+                    m_Assembler.movzx(m_RegWorkingSet.GetMipsRegMap(m_Opcode.rd).r32(), asmjit::x86::r11.r8Lo());
+                }
+            }
         }
     }
     else if (m_RegWorkingSet.IsKnown(m_Opcode.rt) || m_RegWorkingSet.IsKnown(m_Opcode.rs))
