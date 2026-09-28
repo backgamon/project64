@@ -392,7 +392,36 @@ void CX64Ops::AndConstToVariable(void * Variable, const char * VariableName, uin
     }
     else
     {
-        g_Notify->BreakPoint(__FILE__, __LINE__);
+        mov(asmjit::x86::r11, (uintptr_t)Variable);
+        and_(asmjit::x86::dword_ptr(asmjit::x86::r11), Const);
+    }
+}
+
+void CX64Ops::AndVariableToX64reg(const asmjit::x86::Gp & Reg, void * Variable, const char * VariableName)
+{
+    AddNumberSymbol((uintptr_t)Variable, VariableName);
+    if (asmjit::Support::isUInt32((uintptr_t)Variable))
+    {
+        and_(Reg.r32(), asmjit::x86::dword_ptr_abs((uintptr_t)Variable));
+    }
+    else
+    {
+        mov(asmjit::x86::r11, (uintptr_t)Variable);
+        and_(Reg.r32(), asmjit::x86::dword_ptr(asmjit::x86::r11));
+    }
+}
+
+void CX64Ops::AndVariable64ToX64reg(const asmjit::x86::Gp & Reg, void * Variable, const char * VariableName)
+{
+    AddNumberSymbol((uintptr_t)Variable, VariableName);
+    if (asmjit::Support::isUInt32((uintptr_t)Variable))
+    {
+        and_(Reg.r64(), asmjit::x86::qword_ptr_abs((uintptr_t)Variable));
+    }
+    else
+    {
+        mov(asmjit::x86::r11, (uintptr_t)Variable);
+        and_(Reg.r64(), asmjit::x86::qword_ptr(asmjit::x86::r11));
     }
 }
 
